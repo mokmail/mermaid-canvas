@@ -953,9 +953,12 @@ function exportPng(){
   clone.querySelectorAll('foreignObject').forEach(function(fo){ if (fo.parentNode) fo.parentNode.removeChild(fo); });
 
   clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
-  var xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + clone.outerHTML;
-  var blob = new Blob([xml], {type:'image/svg+xml;charset=utf-8'});
-  var url = URL.createObjectURL(blob);
+  clone.removeAttribute('style'); // drop pan/zoom/cursor inline styles for a clean export
+  clone.setAttribute('width','100%');
+  var xml = '<?xml version="1.0" encoding="UTF-8"?>' + clone.outerHTML;
+  // Load via a data URI — Blob URLs for SVG-in-<img> can fail in some served
+  // contexts, while a data URI is self-contained and always rasterizes.
+  var url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
   var img = new Image();
   img.onload = function(){
     // use the SVG viewBox for intrinsic size (in SVG units), then rasterize at 2x
@@ -978,7 +981,7 @@ function exportPng(){
       toast('PNG downloaded');
     }, 'image/png');
   };
-  img.onerror = function(){ toast('PNG export failed', true); URL.revokeObjectURL(url); };
+  img.onerror = function(){ toast('PNG export failed', true); };
   img.src = url;
 }
 
