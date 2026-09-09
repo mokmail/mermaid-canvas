@@ -151,14 +151,40 @@ input[type=text].tbtn{width:120px;background:var(--panel);color:var(--fg)}
     radial-gradient(600px 300px at 0% 0%,rgba(74,222,128,.05),transparent 60%),
     rgba(4,8,16,.5);
   border-radius:0 0 10px 10px;
+  display:flex;
 }
+#gutter{
+  width:44px;flex-shrink:0;overflow:hidden;position:relative;
+  border-right:1px solid var(--border);
+  background:rgba(255,255,255,.02);
+  user-select:none;padding-top:14px;
+  font-family:var(--mono);font-size:13px;line-height:1.6;
+}
+#gutterInner{position:absolute;left:0;right:0;top:0;text-align:right;padding-right:8px;color:var(--faint);white-space:pre}
+#codeLayer{position:relative;flex:1;min-width:0;overflow:hidden}
+#hl{
+  position:absolute;inset:0;pointer-events:none;
+  white-space:pre;overflow:hidden;
+  padding:14px 16px;margin:0;
+  font-family:var(--mono);font-size:13px;line-height:1.6;tab-size:2;
+  color:var(--fg);
+}
+#hl .tok-kw{color:var(--cyan);font-weight:600}
+#hl .tok-cmt{color:var(--faint);font-style:italic}
+#hl .tok-str{color:var(--amber)}
+#hl .tok-node{color:var(--lime)}
+#hl .tok-edge{color:var(--green)}
+#hl .tok-punc{color:var(--blue)}
 #editor{
-  position:absolute;inset:0;width:100%;height:100%;background:transparent;
-  color:var(--fg);border:none;outline:none;resize:none;
+  position:absolute;inset:0;width:100%;height:100%;
+  background:transparent;color:transparent;caret-color:#e7f2ea;
+  border:none;outline:none;resize:none;
   padding:14px 16px;font-family:var(--mono);font-size:13px;line-height:1.6;
   tab-size:2;white-space:pre;overflow:auto;
+  -webkit-text-fill-color:transparent;
 }
-#editor::placeholder{color:var(--faint)}
+#editor::selection{background:rgba(74,222,128,.28);-webkit-text-fill-color:transparent}
+#editor::placeholder{color:rgba(95,122,106,.4)}
 #errbar{display:none;padding:8px 14px;border-top:1px solid rgba(248,113,113,.35);background:rgba(248,113,113,.08);color:var(--red);font-size:11px;white-space:pre-wrap;max-height:110px;overflow:auto;flex-shrink:0}
 #errbar.show{display:block}
 
@@ -369,7 +395,11 @@ input[type=text].tbtn{width:120px;background:var(--panel);color:var(--fg)}
         <span class="hint">Ctrl+Enter to render</span>
       </div>
       <div id="editorWrap">
-        <textarea id="editor" spellcheck="false" placeholder="%% Write Mermaid code here — it renders live&#10;flowchart TD&#10;    A[Start] --> B{Decision}&#10;    B -->|yes| C[Go]&#10;    B -->|no| D[Stop]"></textarea>
+        <div id="gutter"><div id="gutterInner"></div></div>
+        <div id="codeLayer">
+          <pre id="hl" aria-hidden="true"></pre>
+          <textarea id="editor" spellcheck="false" placeholder="%% Write Mermaid code here — it renders live&#10;flowchart TD&#10;    A[Start] --> B{Decision}&#10;    B -->|yes| C[Go]&#10;    B -->|no| D[Stop]"></textarea>
+        </div>
       </div>
       <div id="errbar"></div>
     </div>
@@ -445,6 +475,58 @@ var viewer = $('viewer');
 var errbar = $('errbar');
 var statusDot = $('statusDot');
 var statusText = $('statusText');
+var hlEl = $('hl');
+var gutterInner = $('gutterInner');
+
+/* ================= Editor: syntax highlighting + line numbers =================
+   The textarea is transparent over a highlighted <pre>; both scroll in sync. */
+function highlightMermaid(code){
+  if (!code){
+    hlEl.innerHTML = '';
+    return;
+  }
+  var esc = code.replace(/[&<>]/g, function(c){
+    return c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;';
+  });
+  // Tokenize line by line to keep it simple and robust
+  var lines = esc.split('\n');
+  var out = [];
+  for (var i = 0; i < lines.length; i++){
+    var line = lines[i];
+    var html = line.replace(
+      /(#?%%[^\n]*)|("(?:[^"\\]|\\.)*"|'[^']*')|((?:^|\s)(?:flowchart|sequenceDiagram|classDiagram|stateDiagram|stateDiagram-v2|erDiagram|gantt|pie|journey|gitGraph|C4(?:Context|Container|Component|Dynamic)?|mindmap|timeline|quadrantChart|sankey|sankey-beta|xychart-beta|block-beta|packet-beta|architecture-beta|subgraph|end|direction|section|participant|actor|activate|deactivate|class|note|alt|else|opt|loop|par|and|box|state|style|classDef|linkStyle)(?=$|\s|&))|((?:-->|--x|--o|-.->|==>|~~~|<--|o--|\+\+\+|--))|([\[\]{}()<>])/gi,
+      function(m, cmt, str, kw, edge, punc){
+        if (cmt) return '<span class="tok-cmt">' + cmt + '</span>';
+        if (str) return '<span class="tok-str">' + str + '</span>';
+        if (kw) return '<span class="tok-kw">' + kw + '</span>';
+        if (edge) return '<span class="tok-edge">' + edge + '</span>';
+        return '<span class="tok-punc">' + punc + '</span>';
+      }
+    );
+    out.push(html || '&nbsp;');
+  }
+  hlEl.innerHTML = out.join('\n');
+}
+
+function renderGutter(){
+  var lines = editor.value.split('\n').length;
+  var nums = [];
+  for (var i = 1; i <= lines; i++) nums.push(i);
+  gutterInner.textContent = nums.join('\n');
+  gutterInner.style.paddingTop = '14px';
+}
+
+function syncScroll(){
+  hlEl.scrollTop = editor.scrollTop;
+  hlEl.scrollLeft = editor.scrollLeft;
+  gutterInner.style.transform = 'translateY(-' + editor.scrollTop + 'px)';
+}
+
+function refreshEditor(){
+  highlightMermaid(editor.value);
+  renderGutter();
+  updateLineCol();
+}
 
 /* ================= Mermaid init ================= */
 mermaid.initialize({
@@ -637,6 +719,16 @@ function render(force){
       setStatus('ok','rendered');
       state.lastRender = { svg: res.svg, code: code };
       applyZoom();
+      // In base (custom) theme, the background color picker should visibly
+      // tint the graph canvas — Mermaid's own `background` theme var only
+      // affects cluster fills and the SVG stays transparent, so paint a rect.
+      if (state.theme === 'base'){
+        var svg = viewer.querySelector('svg');
+        if (svg){
+          svg.style.background = state.bg;
+          svg.style.borderRadius = '8px';
+        }
+      }
       // make links open in new tab
       viewer.querySelectorAll('a').forEach(function(a){
         if (a.getAttribute('href') && a.getAttribute('href').indexOf('#') !== 0){
@@ -818,7 +910,7 @@ function loadTemplate(){
   editor.value = tpl;
   state.diagramType = type;
   state.dirty = true;
-  updateLineCol();
+  refreshEditor();
   render(true);
   toast('loaded ' + type + ' template');
 }
@@ -1094,7 +1186,7 @@ function insertPaletteItem(it){
     editor.focus();
     editor.setSelectionRange(start, start + ph.length);
     state.dirty = true;
-    updateLineCol();
+    refreshEditor();
     scheduleRender();
     toast('inserted ' + it.lbl);
     return;
@@ -1110,7 +1202,7 @@ function insertPaletteItem(it){
   editor.focus();
   editor.setSelectionRange(start, end);
   state.dirty = true;
-  updateLineCol();
+  refreshEditor();
   scheduleRender();
   toast('inserted ' + it.lbl);
 }
@@ -1126,6 +1218,8 @@ function buildSnippets(){
       editor.value = s.code;
       state.diagramType = s.cat;
       $('diagramType').value = s.cat;
+      refreshEditor();
+      buildPalette();
       render(true);
       $('snippets').classList.remove('show');
       toast('snippet inserted');
@@ -1170,24 +1264,26 @@ function saveFile(){
 editor.addEventListener('input', function(){
   scheduleRender();
   state.dirty = true;
-  updateLineCol();
+  refreshEditor();
 });
 editor.addEventListener('keydown', function(e){
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter'){ e.preventDefault(); render(true); }
   if ((e.ctrlKey || e.metaKey) && e.key === 's'){ e.preventDefault(); saveFile(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 'o'){ e.preventDefault(); $('fileInput').click(); }
   if ((e.ctrlKey || e.metaKey) && e.key === '/'){ e.preventDefault(); toggleSnippets(); }
+  // Ctrl/Cmd+Z / Shift+Z undo-redo are native; keep default. Tab indents.
   if (e.key === 'Tab'){
     e.preventDefault();
     var s = editor.selectionStart, en = editor.selectionEnd;
     editor.value = editor.value.substring(0,s) + '    ' + editor.value.substring(en);
     editor.selectionStart = editor.selectionEnd = s + 4;
+    refreshEditor();
     scheduleRender();
   }
 });
-editor.addEventListener('scroll', updateLineCol);
+editor.addEventListener('scroll', function(){ syncScroll(); updateLineCol(); });
 editor.addEventListener('click', updateLineCol);
-editor.addEventListener('keyup', updateLineCol);
+editor.addEventListener('keyup', function(){ updateLineCol(); syncScroll(); });
 
 function updateLineCol(){
   var v = editor.value;
@@ -1240,6 +1336,7 @@ $('btnNew').addEventListener('click', function(){
   if (state.dirty && !confirm('Discard the current diagram?')) return;
   editor.value = '';
   state.dirty = false;
+  refreshEditor();
   render(true);
   toast('new diagram');
 });
@@ -1252,6 +1349,7 @@ $('fileInput').addEventListener('change', function(e){
   r.onload = function(){
     editor.value = r.result;
     state.dirty = false;
+    refreshEditor();
     render(true);
     toast('loaded ' + f.name);
   };
@@ -1308,7 +1406,7 @@ buildPalette();
 editor.value = SNIPPETS[0].code;
 state.diagramType = 'flowchart';
 $('diagramType').value = 'flowchart';
-updateLineCol();
+refreshEditor();
 render(true);
 
 })();
