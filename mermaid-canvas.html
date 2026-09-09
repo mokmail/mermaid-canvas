@@ -189,15 +189,45 @@ input[type=text].tbtn{width:120px;background:var(--panel);color:var(--fg)}
 #errbar.show{display:block}
 
 /* Viewer */
-#viewerPane{background:rgba(255,255,255,.015);border-radius:10px;overflow:hidden}
+#viewerPane{background:rgba(255,255,255,.015);border-radius:10px;overflow:hidden;position:relative}
 #viewer{
   flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;
-  padding:20px;min-height:0;
+  padding:20px;min-height:0;position:relative;
+  background-color:rgba(4,8,16,.35);
 }
-#viewer svg{max-width:100%;height:auto}
+/* grid background states (cycled via the viewport ▦ tool) */
+#viewer.svg-grid-none{background-image:none}
+#viewer.svg-grid-dots{background-image:radial-gradient(rgba(74,222,128,.25) 1px,transparent 1px);background-size:22px 22px}
+#viewer.svg-grid-lines{background-image:linear-gradient(rgba(74,222,128,.12) 1px,transparent 1px),linear-gradient(90deg,rgba(74,222,128,.12) 1px,transparent 1px);background-size:28px 28px}
+#viewer.svg-grid-major{background-image:linear-gradient(rgba(74,222,128,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(74,222,128,.08) 1px,transparent 1px),linear-gradient(rgba(74,222,128,.16) 1.5px,transparent 1.5px),linear-gradient(90deg,rgba(74,222,128,.16) 1.5px,transparent 1.5px);background-size:28px 28px,28px 28px,140px 140px,140px 140px}
+#viewer.svg-grid-isometric{background-image:linear-gradient(30deg,rgba(74,222,128,.12) 1px,transparent 1px),linear-gradient(150deg,rgba(74,222,128,.12) 1px,transparent 1px);background-size:38px 66px;background-position:center}
+#viewer.svg-grid-graph{background-image:radial-gradient(rgba(34,211,238,.2) 1.2px,transparent 1.2px),radial-gradient(rgba(34,211,238,.08) 1.2px,transparent 1.2px);background-size:22px 22px,46px 46px;background-position:0 0,11px 11px}
+#viewer.svg-grid-gridpaper{background-image:linear-gradient(rgba(34,211,238,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,.05) 1px,transparent 1px),linear-gradient(rgba(34,211,238,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,.16) 1px,transparent 1px);background-size:120px 120px,120px 120px,480px 480px,480px 480px}
+#viewer svg{max-width:100%;height:auto;transition:transform .18s ease}
 #empty{color:var(--muted);font-size:12px;text-align:center;padding:60px 20px;line-height:2.2;margin:auto}
 #empty .big{font-size:26px;display:block;margin-bottom:8px;color:var(--faint)}
 #empty code{color:var(--cyan);background:var(--panel);padding:1px 6px;border-radius:6px;border:1px solid var(--border)}
+
+/* Floating viewer tool bar (bottom-right) */
+#viewerTools{
+  position:absolute;right:14px;bottom:14px;z-index:20;
+  display:flex;gap:4px;padding:5px;border-radius:12px;
+  background:rgba(12,18,14,.72);
+  backdrop-filter:blur(var(--glass-blur));
+  -webkit-backdrop-filter:blur(var(--glass-blur));
+  border:1px solid var(--border2);box-shadow:0 6px 20px rgba(0,0,0,.4);
+}
+.vtool{
+  display:flex;align-items:center;justify-content:center;gap:4px;
+  min-width:30px;height:30px;padding:0 6px;border-radius:8px;
+  background:transparent;border:1px solid transparent;color:var(--muted);
+  font-size:15px;cursor:pointer;transition:.12s;line-height:1;
+}
+.vtool:hover{background:var(--panel-hi);border-color:var(--border2);color:var(--green)}
+.vtool.active{color:var(--green);box-shadow:inset 0 0 0 1px var(--green)}
+.vtool .ico{font-size:15px;line-height:1}
+.vtool .vt-label{font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:var(--faint)}
+.vtool.active .vt-label{color:var(--green)}
 
 /* ===== Modal ===== */
 #modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;align-items:center;justify-content:center;padding:20px}
@@ -274,6 +304,9 @@ input[type=text].tbtn{width:120px;background:var(--panel);color:var(--fg)}
   #split{grid-template-columns:1fr;grid-template-rows:1fr 1fr;padding:8px}
   #editorPane{border-right:none;border-bottom:1px solid var(--border)}
   #viewer{padding:10px}
+  #viewerTools{right:10px;bottom:10px}
+  .vtool{min-width:28px;height:28px}
+  .vtool .vt-label{display:none}
   #split.vert #palettePane{border-right:none;border-bottom:1px solid var(--border);width:auto}
   #snippets{width:100%}
   .modal-box{max-height:92vh}
@@ -417,6 +450,16 @@ input[type=text].tbtn{width:120px;background:var(--panel);color:var(--fg)}
           The graph renders here <b>live</b>.<br>
           Press <code>Ctrl+Enter</code> or start typing.
         </div>
+      </div>
+      <!-- floating viewer controls -->
+      <div id="viewerTools">
+        <button class="vtool" id="vtGrid" title="Cycle grid background"><span class="ico">▦</span><span class="vt-label" id="vtGridLabel">grid</span></button>
+        <button class="vtool" id="vtZoomIn" title="Zoom in"><span class="ico">+</span></button>
+        <button class="vtool" id="vtZoomOut" title="Zoom out"><span class="ico">−</span></button>
+        <button class="vtool" id="vtCenter" title="Center diagram"><span class="ico">⌖</span></button>
+        <button class="vtool" id="vtReset" title="Reset view (1:1)"><span class="ico">⣿</span></button>
+        <button class="vtool" id="vtFit" title="Fit to view"><span class="ico">⤢</span></button>
+        <button class="vtool" id="vtPng" title="Export PNG"><span class="ico">⬇</span></button>
       </div>
     </div>
   </div>
@@ -1411,6 +1454,46 @@ $('btnZoomIn').addEventListener('click', function(){ state.zoom = Math.min(state
 $('btnZoomOut').addEventListener('click', function(){ state.zoom = Math.max(state.zoom / 1.2, 0.1); state.fit = false; applyZoom(); });
 $('btnZoomReset').addEventListener('click', resetView);
 $('btnFit').addEventListener('click', function(){ state.fit = !state.fit; this.classList.toggle('active', state.fit); applyZoom(); });
+
+/* Floating viewer tools */
+var GRIDS = [
+  { cls: 'svg-grid-none', label: 'none' },
+  { cls: 'svg-grid-dots', label: 'dots' },
+  { cls: 'svg-grid-lines', label: 'lines' },
+  { cls: 'svg-grid-major', label: 'major' },
+  { cls: 'svg-grid-isometric', label: 'isom' },
+  { cls: 'svg-grid-graph', label: 'graph' },
+  { cls: 'svg-grid-gridpaper', label: 'gridpaper' },
+];
+var gridIdx = 0;
+function setGrid(i){
+  gridIdx = (i + GRIDS.length) % GRIDS.length;
+  viewer.className = GRIDS[gridIdx].cls;
+  var lbl = $('vtGridLabel');
+  lbl.textContent = GRIDS[gridIdx].label;
+  $('vtGrid').classList.toggle('active', gridIdx !== 0);
+}
+function centerView(){
+  var svg = viewer.querySelector('svg');
+  if (!svg) return;
+  var vw = viewer.clientWidth, vh = viewer.clientHeight;
+  var r = svg.getBoundingClientRect();
+  var sw = r.width / state.zoom, sh = r.height / state.zoom;
+  state.panX = (vw - sw) / 2;
+  state.panY = (vh - sh - 40) / 2;
+  state.zoom = 1;
+  state.fit = false;
+  $('vtFit').classList.remove('active');
+  applyZoom();
+}
+$('vtGrid').addEventListener('click', function(){ setGrid(gridIdx + 1); });
+$('vtZoomIn').addEventListener('click', function(){ state.zoom = Math.min(state.zoom * 1.25, 5); state.fit = false; $('vtFit').classList.remove('active'); applyZoom(); });
+$('vtZoomOut').addEventListener('click', function(){ state.zoom = Math.max(state.zoom / 1.25, 0.1); state.fit = false; $('vtFit').classList.remove('active'); applyZoom(); });
+$('vtCenter').addEventListener('click', centerView);
+$('vtReset').addEventListener('click', function(){ resetView(); setGrid(0); });
+$('vtFit').addEventListener('click', function(){ state.fit = !state.fit; this.classList.toggle('active', state.fit); $('btnFit').classList.toggle('active', state.fit); applyZoom(); });
+$('vtPng').addEventListener('click', exportPng);
+
 
 $('btnSvg').addEventListener('click', exportSvg);
 $('btnPng').addEventListener('click', exportPng);
