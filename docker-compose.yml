@@ -1,0 +1,8 @@
+services:
+  mermaid-canvas:
+    build: .
+    image: mokmail/mermaid-canvas:latest
+    container_name: mermaid-canvas
+    ports:
+      - "8080:80"
+    restart: unless-stopped
