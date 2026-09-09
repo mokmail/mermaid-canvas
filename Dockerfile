@@ -5,6 +5,7 @@ FROM nginx:1.27-alpine
 
 # Copy the app into the nginx web root
 COPY mermaid-canvas.html /usr/share/nginx/html/index.html
+COPY mermaid-canvas.css /usr/share/nginx/html/mermaid-canvas.css
 COPY mermaid.min.js /usr/share/nginx/html/mermaid.min.js
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 

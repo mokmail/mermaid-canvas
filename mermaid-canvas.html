@@ -9,492 +9,188 @@
 <meta property="og:description" content="Two-pane Mermaid studio: IDE editor + live graph viewer. Every diagram type, full theming, SVG/PNG/Markdown export. Self-hostable via Docker.">
 <meta property="og:type" content="website">
 <link rel="icon" type="image/svg+xml" href="/logo-mark.svg">
+<link rel="stylesheet" href="mermaid-canvas.css">
 <style>
-:root{
-  --bg:#070b14; /* deep blue-black canvas */
-  --bg-grad-1:rgba(74,222,128,.09);
-  --bg-grad-2:rgba(34,211,238,.07);
-  --panel:rgba(255,255,255,.045);       /* frosted translucent panels */
-  --panel-hi:rgba(255,255,255,.07);
-  --panel2:rgba(255,255,255,.03);
-  --border:rgba(255,255,255,.09);
-  --border2:rgba(255,255,255,.16);
-  --fg:#e7f2ea; --muted:#8fb0a0; --faint:#5f7a6a;
-  --green:#4ade80; --cyan:#22d3ee; --lime:#a3e635; --amber:#fbbf24; --red:#f87171; --blue:#60a5fa;
-  --glass-blur:14px;
-  --mono:ui-monospace,SF Mono,Menlo,Consolas,"JetBrains Mono",monospace;
-  --glow-green:0 0 24px rgba(74,222,128,.25),0 0 60px rgba(74,222,128,.12);
-}
-*{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%;overflow:hidden}
-body{
-  background:
-    radial-gradient(1100px 600px at 10% -10%, rgba(74,222,128,.16), transparent 60%),
-    radial-gradient(900px 500px at 92% 110%, rgba(34,211,238,.14), transparent 55%),
-    radial-gradient(800px 600px at 80% 10%, rgba(163,230,53,.06), transparent 50%),
-    var(--bg);
-  background-attachment:fixed;
-  color:var(--fg);font-family:var(--mono);font-size:13px;
-}
-button{font-family:inherit;cursor:pointer}
-select,input{font-family:inherit}
-::-webkit-scrollbar{width:9px;height:9px}
-::-webkit-scrollbar-thumb{background:var(--border2);border-radius:5px}
-::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.25)}
-::-webkit-scrollbar-track{background:transparent}
+  /* minimal structural CSS the Tailwind build won't cover */
+  #gutterInner{position:absolute;left:0;right:0;top:0;text-align:right;padding-right:8px;color:var(--c-faint,#5f7a6a);white-space:pre}
+  #editor{color:transparent;-webkit-text-fill-color:transparent;caret-color:#e7f2ea}
+  #editor::selection{background:rgba(74,222,128,.28);-webkit-text-fill-color:transparent}
+  #editor::placeholder{color:rgba(95,122,106,.4)}
+  #hl{position:absolute;inset:0;pointer-events:none;white-space:pre;overflow:hidden}
+  #viewer svg{max-width:100%;height:auto;transition:transform .18s ease}
+  .tok-kw{color:#22d3ee;font-weight:600}
+  .tok-cmt{color:#5f7a6a;font-style:italic}
+  .tok-str{color:#fbbf24}
+  .tok-edge{color:#4ade80}
+  .tok-punc{color:#60a5fa}
+  .vt-select{background:transparent;border:none;color:inherit;font-family:inherit;font-size:11px;cursor:pointer;outline:none;max-width:88px;-webkit-appearance:none;appearance:none}
+  .vt-select option{background:#0a0e14;color:#e7f2ea}
+  /* vertical split: palette on its own row, editor + viewer stacked below */
+  #split.vert{grid-template-columns:1fr!important;grid-template-rows:auto 1fr 1fr!important}
+  #split.vert #palettePane{width:auto!important;border-right:none!important;border-bottom:1px solid rgba(255,255,255,.09);border-radius:10px;display:flex;max-height:180px;margin-bottom:2px}
+  #split.vert #editorPane{border-right:none!important;border-bottom:1px solid rgba(255,255,255,.09)}
 
-/* ===== App shell ===== */
-.app{display:grid;grid-template-rows:auto auto 1fr;height:100vh}
-header{
-  display:flex;align-items:center;gap:14px;padding:10px 18px;
-  border-bottom:1px solid var(--border);
-  background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.01));
-  backdrop-filter:blur(var(--glass-blur));
-  -webkit-backdrop-filter:blur(var(--glass-blur));
-  flex-wrap:wrap;
-}
-h1{
-  font-size:15px;letter-spacing:3px;
-  background:linear-gradient(90deg,var(--green),var(--cyan));
-  -webkit-background-clip:text;background-clip:text;color:transparent;
-  white-space:nowrap;filter:drop-shadow(0 0 12px rgba(74,222,128,.35));
-}
-.badge{font-size:10px;border:1px solid var(--border);border-radius:999px;padding:2px 9px;color:var(--muted);letter-spacing:1px;white-space:nowrap;background:var(--panel2)}
-header .nav{
-  margin-left:auto;font-size:11px;color:var(--muted);text-decoration:none;
-  border:1px solid var(--border);border-radius:999px;padding:3px 10px;transition:.12s;white-space:nowrap;
-  background:var(--panel2);
-}
-header .nav:hover{border-color:var(--green);color:var(--green);box-shadow:0 0 14px rgba(74,222,128,.2)}
-.hdr-status{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
-.dot{width:7px;height:7px;border-radius:50%;background:var(--faint)}
-.dot.ok{background:var(--green);box-shadow:0 0 8px var(--green)}
-.dot.err{background:var(--red);box-shadow:0 0 8px var(--red)}
-.dot.busy{background:var(--amber);animation:pulse 1s infinite}
-@keyframes pulse{50%{opacity:.35}}
-
-/* ===== Toolbar ===== */
-#toolbar{
-  display:flex;align-items:center;gap:8px;padding:7px 14px;
-  border-bottom:1px solid var(--border);
-  background:linear-gradient(180deg,rgba(255,255,255,.025),transparent);
-  backdrop-filter:blur(var(--glass-blur));
-  -webkit-backdrop-filter:blur(var(--glass-blur));
-  flex-wrap:wrap;font-size:11px;
-}
-.tb-group{display:flex;align-items:center;gap:4px;padding-right:10px;border-right:1px solid var(--border);margin-right:4px}
-.tb-group:last-child{border-right:none;margin-right:0;padding-right:0}
-.tb-label{color:var(--faint);letter-spacing:1px;font-size:10px;text-transform:uppercase;margin-right:2px}
-.tbtn{
-  background:var(--panel);border:1px solid var(--border);color:var(--muted);
-  border-radius:8px;padding:4px 9px;font-size:11px;transition:.12s;white-space:nowrap;
-}
-.tbtn:hover:not(:disabled){border-color:var(--green);color:var(--green);background:var(--panel-hi);box-shadow:0 0 12px rgba(74,222,128,.18)}
-.tbtn.active{border-color:var(--green);color:var(--green);background:rgba(74,222,128,.14)}
-.tbtn:disabled{opacity:.35;cursor:not-allowed}
-.tbtn.pri{
-  background:linear-gradient(135deg,var(--green),var(--lime));border-color:transparent;color:#06210f;
-  font-weight:700;box-shadow:0 4px 16px rgba(74,222,128,.28);
-}
-.tbtn.pri:hover:not(:disabled){background:linear-gradient(135deg,var(--lime),var(--green));color:#06210f;box-shadow:0 6px 22px rgba(163,230,53,.35)}
-.tbtn.danger:hover:not(:disabled){border-color:var(--red);color:var(--red);background:rgba(248,113,113,.08)}
-select.tbtn{background:var(--panel);color:var(--fg)}
-input[type=color].tbtn{width:30px;height:26px;padding:1px;border-radius:8px}
-input[type=range].tbtn{width:90px;accent-color:var(--green);height:4px;padding:0}
-input[type=text].tbtn{width:120px;background:var(--panel);color:var(--fg)}
-
-/* ===== Split panes ===== */
-#split{display:grid;grid-template-columns:auto 1fr 1fr;min-height:0;flex:1;gap:1px;background:var(--border);padding:10px}
-#split.vert{grid-template-columns:1fr;grid-template-rows:auto 1fr 1fr}
-.pane{display:flex;flex-direction:column;min-width:0;min-height:0;background:rgba(255,255,255,.035)}
-#editorPane{border-right:1px solid var(--border)}
-#split.vert #editorPane{border-right:none;border-bottom:1px solid var(--border)}
-.pane-head{
-  display:flex;align-items:center;gap:8px;padding:8px 12px;
-  border-bottom:1px solid var(--border);
-  background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.01));
-  backdrop-filter:blur(var(--glass-blur));
-  -webkit-backdrop-filter:blur(var(--glass-blur));
-  font-size:10px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;flex-shrink:0;
-}
-.pane-head .sp{flex:1}
-.pane-head .ln{color:var(--cyan);font-weight:600}
-.pane-head .hint{color:var(--faint);text-transform:none;letter-spacing:0}
-
-/* ===== Palette (context-aware insert panel) ===== */
-#palettePane{
-  width:210px;border-right:1px solid var(--border);
-  background:linear-gradient(180deg,rgba(255,255,255,.03),transparent);
-  backdrop-filter:blur(var(--glass-blur));
-  -webkit-backdrop-filter:blur(var(--glass-blur));
-  flex-shrink:0;border-radius:10px;overflow:hidden;
-}
-#split.vert #palettePane{border-right:none;border-bottom:1px solid var(--border);width:auto}
-#paletteBody{flex:1;overflow-y:auto;padding:10px}
-.pal-cat{font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:var(--faint);margin:12px 0 5px;padding-left:2px}
-.pal-cat:first-child{margin-top:0}
-.pal-item{
-  display:flex;align-items:center;gap:7px;width:100%;text-align:left;
-  background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:8px;
-  padding:6px 8px;margin-bottom:5px;color:var(--fg);font-size:11px;transition:.12s;cursor:pointer;
-}
-.pal-item:hover{border-color:var(--green);background:rgba(74,222,128,.09);color:var(--green);box-shadow:0 0 10px rgba(74,222,128,.12)}
-.pal-item .ico{color:var(--cyan);font-size:12px;width:14px;text-align:center;flex-shrink:0}
-.pal-item .lbl{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pal-item .hint{color:var(--faint);font-size:9px;flex-shrink:0}
-.pal-empty{color:var(--faint);font-size:11px;text-align:center;padding:20px 8px;line-height:1.7}
-
-/* Editor */
-#editorWrap{
-  flex:1;position:relative;min-height:0;overflow:hidden;
-  background:
-    radial-gradient(600px 300px at 0% 0%,rgba(74,222,128,.05),transparent 60%),
-    rgba(4,8,16,.5);
-  border-radius:0 0 10px 10px;
-  display:flex;
-}
-#gutter{
-  width:44px;flex-shrink:0;overflow:hidden;position:relative;
-  border-right:1px solid var(--border);
-  background:rgba(255,255,255,.02);
-  user-select:none;padding-top:14px;
-  font-family:var(--mono);font-size:13px;line-height:1.6;
-}
-#gutterInner{position:absolute;left:0;right:0;top:0;text-align:right;padding-right:8px;color:var(--faint);white-space:pre}
-#codeLayer{position:relative;flex:1;min-width:0;overflow:hidden}
-#hl{
-  position:absolute;inset:0;pointer-events:none;
-  white-space:pre;overflow:hidden;
-  padding:14px 16px;margin:0;
-  font-family:var(--mono);font-size:13px;line-height:1.6;tab-size:2;
-  color:var(--fg);
-}
-#hl .tok-kw{color:var(--cyan);font-weight:600}
-#hl .tok-cmt{color:var(--faint);font-style:italic}
-#hl .tok-str{color:var(--amber)}
-#hl .tok-node{color:var(--lime)}
-#hl .tok-edge{color:var(--green)}
-#hl .tok-punc{color:var(--blue)}
-#editor{
-  position:absolute;inset:0;width:100%;height:100%;
-  background:transparent;color:transparent;caret-color:#e7f2ea;
-  border:none;outline:none;resize:none;
-  padding:14px 16px;font-family:var(--mono);font-size:13px;line-height:1.6;
-  tab-size:2;white-space:pre;overflow:auto;
-  -webkit-text-fill-color:transparent;
-}
-#editor::selection{background:rgba(74,222,128,.28);-webkit-text-fill-color:transparent}
-#editor::placeholder{color:rgba(95,122,106,.4)}
-#errbar{display:none;padding:8px 14px;border-top:1px solid rgba(248,113,113,.35);background:rgba(248,113,113,.08);color:var(--red);font-size:11px;white-space:pre-wrap;max-height:110px;overflow:auto;flex-shrink:0}
-#errbar.show{display:block}
-
-/* Viewer */
-#viewerPane{background:rgba(255,255,255,.015);border-radius:10px;overflow:hidden;position:relative}
-#viewer{
-  flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;
-  padding:20px;min-height:0;position:relative;
-  background-color:rgba(4,8,16,.35);
-}
-/* grid background states (cycled via the viewport ▦ tool) */
-#viewer.svg-grid-none{background-image:none}
-#viewer.svg-grid-dots{background-image:radial-gradient(rgba(74,222,128,.25) 1px,transparent 1px);background-size:22px 22px}
-#viewer.svg-grid-lines{background-image:linear-gradient(rgba(74,222,128,.12) 1px,transparent 1px),linear-gradient(90deg,rgba(74,222,128,.12) 1px,transparent 1px);background-size:28px 28px}
-#viewer.svg-grid-major{background-image:linear-gradient(rgba(74,222,128,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(74,222,128,.08) 1px,transparent 1px),linear-gradient(rgba(74,222,128,.16) 1.5px,transparent 1.5px),linear-gradient(90deg,rgba(74,222,128,.16) 1.5px,transparent 1.5px);background-size:28px 28px,28px 28px,140px 140px,140px 140px}
-#viewer.svg-grid-isometric{background-image:linear-gradient(30deg,rgba(74,222,128,.12) 1px,transparent 1px),linear-gradient(150deg,rgba(74,222,128,.12) 1px,transparent 1px);background-size:38px 66px;background-position:center}
-#viewer.svg-grid-graph{background-image:radial-gradient(rgba(34,211,238,.2) 1.2px,transparent 1.2px),radial-gradient(rgba(34,211,238,.08) 1.2px,transparent 1.2px);background-size:22px 22px,46px 46px;background-position:0 0,11px 11px}
-#viewer.svg-grid-gridpaper{background-image:linear-gradient(rgba(34,211,238,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,.05) 1px,transparent 1px),linear-gradient(rgba(34,211,238,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,.16) 1px,transparent 1px);background-size:120px 120px,120px 120px,480px 480px,480px 480px}
-#viewer svg{max-width:100%;height:auto;transition:transform .18s ease}
-#empty{color:var(--muted);font-size:12px;text-align:center;padding:60px 20px;line-height:2.2;margin:auto}
-#empty .big{font-size:26px;display:block;margin-bottom:8px;color:var(--faint)}
-#empty code{color:var(--cyan);background:var(--panel);padding:1px 6px;border-radius:6px;border:1px solid var(--border)}
-
-/* Floating viewer tool bar (bottom-right) */
-#viewerTools{
-  position:absolute;right:14px;bottom:14px;z-index:20;
-  display:flex;gap:4px;padding:5px;border-radius:12px;
-  background:rgba(12,18,14,.72);
-  backdrop-filter:blur(var(--glass-blur));
-  -webkit-backdrop-filter:blur(var(--glass-blur));
-  border:1px solid var(--border2);box-shadow:0 6px 20px rgba(0,0,0,.4);
-}
-.vtool{
-  display:flex;align-items:center;justify-content:center;gap:4px;
-  min-width:30px;height:30px;padding:0 6px;border-radius:8px;
-  background:transparent;border:1px solid transparent;color:var(--muted);
-  font-size:15px;cursor:pointer;transition:.12s;line-height:1;
-}
-.vtool:hover{background:var(--panel-hi);border-color:var(--border2);color:var(--green)}
-.vtool.active{color:var(--green);box-shadow:inset 0 0 0 1px var(--green)}
-.vtool .ico{font-size:15px;line-height:1}
-.vtool .vt-label{font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:var(--faint)}
-.vtool.active .vt-label{color:var(--green)}
-.vtool .vt-select{
-  background:transparent;border:none;color:var(--muted);font-family:inherit;font-size:11px;
-  cursor:pointer;outline:none;max-width:88px;-webkit-appearance:none;appearance:none;
-  padding-right:10px;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
-  background-position:calc(100% - 6px) 55%,calc(100% - 2px) 55%;background-size:4px 4px;background-repeat:no-repeat;
-}
-.vtool .vt-select option{background:var(--panel);color:var(--fg)}
-.vtool .vt-select:hover{color:var(--green)}
-#vtThemeLabel{padding:0 8px}
-.vtool.vt-color{width:24px;height:24px;padding:1px;border:1px solid var(--border);border-radius:6px}
-
-/* ===== Modal ===== */
-#modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;align-items:center;justify-content:center;padding:20px}
-#modal.show{display:flex}
-.modal-box{background:var(--panel);border:1px solid var(--border2);border-radius:10px;max-width:720px;width:100%;max-height:86vh;display:flex;flex-direction:column;overflow:hidden}
-.modal-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);font-size:12px;letter-spacing:1px;color:var(--green);text-transform:uppercase}
-.modal-head .sp{flex:1}
-.modal-close{background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:5px;padding:3px 9px;font-size:11px}
-.modal-close:hover{border-color:var(--red);color:var(--red)}
-.modal-body{padding:16px;overflow:auto;font-size:12px;line-height:1.7;color:var(--fg)}
-.modal-body h3{color:var(--cyan);font-size:12px;letter-spacing:1px;margin:14px 0 6px;text-transform:uppercase}
-.modal-body h3:first-child{margin-top:0}
-.modal-body p{color:var(--muted);margin-bottom:8px}
-.modal-body code{color:var(--lime);background:var(--panel2);padding:1px 5px;border-radius:4px;border:1px solid var(--border)}
-.modal-body pre{background:var(--panel2);border:1px solid var(--border);border-radius:6px;padding:10px;overflow:auto;color:var(--fg);font-size:11px;line-height:1.6;margin:6px 0 10px}
-.modal-body table{width:100%;border-collapse:collapse;margin:6px 0 10px;font-size:11px}
-.modal-body th,.modal-body td{border:1px solid var(--border);padding:5px 8px;text-align:left}
-.modal-body th{color:var(--cyan);background:var(--panel2);font-weight:600}
-.modal-body td{color:var(--muted)}
-.modal-body .kbd{display:inline-block;border:1px solid var(--border2);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-size:10px;color:var(--fg);background:var(--panel2)}
-.modal-foot{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--border);justify-content:flex-end;flex-wrap:wrap}
-
-/* ===== Toast ===== */
-#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--green);color:#06210f;font-weight:700;font-size:12px;padding:9px 22px;border-radius:7px;transition:transform .22s;pointer-events:none;letter-spacing:1px;z-index:99;box-shadow:0 6px 24px rgba(0,0,0,.4)}
-#toast.err{background:var(--red);color:#1a0505}
-#toast.show{transform:translateX(-50%) translateY(0)}
-
-/* ===== Snippets panel ===== */
-#snippets{display:none;position:fixed;top:0;right:0;bottom:0;width:340px;background:var(--panel);border-left:1px solid var(--border2);z-index:40;flex-direction:column;box-shadow:-8px 0 30px rgba(0,0,0,.4)}
-#snippets.show{display:flex}
-#snippets .s-body{flex:1;overflow:auto;padding:12px}
-.snip{border:1px solid var(--border);border-radius:7px;padding:9px 11px;margin-bottom:8px;cursor:pointer;transition:.12s;background:var(--panel2)}
-.snip:hover{border-color:var(--green);background:rgba(74,222,128,.05)}
-.snip .t{color:var(--cyan);font-size:11px;font-weight:600;margin-bottom:3px}
-.snip .d{color:var(--faint);font-size:10px;line-height:1.5}
-.snip .cat{display:inline-block;font-size:9px;color:var(--muted);border:1px solid var(--border);border-radius:3px;padding:0 5px;margin-top:4px;letter-spacing:.5px}
-
-/* ===== Mobile responsive ===== */
-#paletteBackdrop{display:none}
-#btnPaletteFab{display:none}
-@media(max-width:760px){
-  /* Header: keep it compact */
-  header{padding:8px 12px;gap:8px}
-  header .badge{display:none}
-  header h1{font-size:13px;letter-spacing:2px}
-  header .nav{display:none}
-  .hdr-status{font-size:10px}
-
-  /* Toolbar: single horizontally-scrollable row instead of a tall wrap */
-  #toolbar{flex-wrap:nowrap;overflow-x:auto;padding:6px 10px;gap:6px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
-  #toolbar::-webkit-scrollbar{display:none}
-  .tb-group{flex-shrink:0;padding-right:8px;margin-right:2px}
-  .tb-label{display:none}
-  .tbtn{padding:5px 8px;font-size:11px;white-space:nowrap}
-  select.tbtn{max-width:120px}
-  input[type=color].tbtn{width:26px;height:26px}
-  input[type=range].tbtn{width:70px}
-
-  /* Palette becomes a slide-in drawer from the left */
-  #palettePane{position:fixed;top:0;left:0;bottom:0;width:78vw;max-width:300px;z-index:60;border-right:1px solid var(--border2);box-shadow:8px 0 30px rgba(0,0,0,.5);transform:translateX(-105%);transition:transform .22s ease;background:var(--panel)}
-  #palettePane.open{transform:translateX(0)}
-  #paletteBackdrop{display:block;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:55;opacity:0;pointer-events:none;transition:opacity .2s}
-  #paletteBackdrop.show{opacity:1;pointer-events:auto}
-  #paletteBody{padding:8px}
-  .pal-item{padding:8px 10px;font-size:12px}
-  .pal-cat{margin:10px 0 4px}
-
-  /* Floating palette button — always visible, never buried in the scroll */
-  #btnPaletteFab{display:flex;position:fixed;left:14px;bottom:18px;z-index:70;align-items:center;justify-content:center;gap:6px;width:auto;height:46px;padding:0 16px;border-radius:23px;background:var(--green);color:#06210f;font-weight:700;font-size:12px;letter-spacing:.5px;border:none;box-shadow:0 6px 20px rgba(0,0,0,.45);cursor:pointer}
-  #btnPaletteFab:hover{background:var(--lime)}
-  #btnPaletteFab .ico{font-size:15px}
-
-  /* Split: editor + viewer stacked */
-  #split{grid-template-columns:1fr;grid-template-rows:1fr 1fr;padding:8px}
-  #editorPane{border-right:none;border-bottom:1px solid var(--border)}
-  #viewer{padding:10px}
-  #viewerTools{right:10px;bottom:10px}
-  .vtool{min-width:28px;height:28px}
-  .vtool .vt-label{display:none}
-  #split.vert #palettePane{border-right:none;border-bottom:1px solid var(--border);width:auto}
-  #snippets{width:100%}
-  .modal-box{max-height:92vh}
-}
-@media(max-width:760px) and (orientation:landscape){
-  #split{grid-template-columns:1fr 1fr;grid-template-rows:1fr}
-  #editorPane{border-right:1px solid var(--border);border-bottom:none}
-}
 </style>
 </head>
-<body>
-<div class="app">
-  <header>
-    <h1>MERMAID CANVAS</h1>
-    <span class="badge">v1.0.0</span>
-    <span class="badge">mermaid 11.4.1</span>
-    <span class="hdr-status"><span class="dot" id="statusDot"></span><span id="statusText">ready</span></span>
-    <a class="nav" href="/tools/mermaid-canvas" target="_blank">↗ open standalone</a>
+<body class="font-mono">
+
+<div class="flex h-screen flex-col">
+  <!-- Header -->
+  <header class="flex flex-wrap items-center gap-3 border-b border-line bg-white/[0.035] px-5 py-2.5 backdrop-blur-xl">
+    <h1 class="bg-gradient-to-r from-acc-green to-acc-cyan bg-clip-text text-[15px] font-bold tracking-[0.2em] text-transparent drop-shadow-[0_0_12px_rgba(74,222,128,.35)]">
+      MERMAID CANVAS
+    </h1>
+    <span class="rounded-full border border-line px-2 py-0.5 text-[10px] tracking-wider text-mist">v1.0.0</span>
+    <span class="rounded-full border border-line bg-white/[0.03] px-2 py-0.5 text-[10px] tracking-wider text-mist">mermaid 11.4.1</span>
+    <span class="flex items-center gap-1.5 text-[11px] text-mist"><span id="statusDot" class="h-1.5 w-1.5 rounded-full bg-faint"></span><span id="statusText">ready</span></span>
+    <a href="/tools/mermaid-canvas" target="_blank" rel="noreferrer" class="ml-auto hidden items-center gap-1.5 rounded-full border border-line bg-white/[0.03] px-3 py-1.5 text-[11px] text-mist transition-colors hover:border-acc-green hover:text-acc-green md:inline-flex">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M9 7h8v8"/></svg>
+      open standalone
+    </a>
   </header>
 
-  <div id="toolbar">
-    <div class="tb-group">
-      <span class="tb-label">diagram</span>
-      <select id="diagramType" class="tbtn" title="Diagram type">
-        <option value="flowchart">flowchart</option>
-        <option value="sequence">sequence</option>
-        <option value="class">class</option>
-        <option value="state">state</option>
-        <option value="er">er</option>
-        <option value="gantt">gantt</option>
-        <option value="pie">pie</option>
-        <option value="journey">journey</option>
-        <option value="git">git</option>
-        <option value="c4">C4</option>
-        <option value="mindmap">mindmap</option>
-        <option value="timeline">timeline</option>
-        <option value="quadrant">quadrant</option>
-        <option value="sankey">sankey</option>
-        <option value="xychart">xychart</option>
-        <option value="block">block</option>
-        <option value="packet">packet</option>
-        <option value="architecture">architecture</option>
+  <!-- Toolbar -->
+  <div id="toolbar" class="flex flex-wrap items-center gap-2 border-b border-line bg-gradient-to-b from-white/[0.025] to-transparent px-4 py-1.5 text-[11px] backdrop-blur-xl">
+    <div class="flex items-center gap-1 pr-2 border-r border-line">
+      <span class="mr-1 text-[10px] uppercase tracking-wider text-faint">diagram</span>
+      <select id="diagramType" title="Diagram type" class="rounded-lg border border-line bg-white/[0.045] px-2 py-1 text-mist outline-none transition-colors hover:border-acc-green hover:text-acc-green">
+        <option value="flowchart">flowchart</option><option value="sequence">sequence</option><option value="class">class</option>
+        <option value="state">state</option><option value="er">er</option><option value="gantt">gantt</option>
+        <option value="pie">pie</option><option value="journey">journey</option><option value="git">git</option>
+        <option value="c4">C4</option><option value="mindmap">mindmap</option><option value="timeline">timeline</option>
+        <option value="quadrant">quadrant</option><option value="sankey">sankey</option><option value="xychart">xychart</option>
+        <option value="block">block</option><option value="packet">packet</option><option value="architecture">architecture</option>
       </select>
-      <button class="tbtn pri" id="btnTemplate" title="Load a starter template for the selected diagram type">+ template</button>
+      <button id="btnTemplate" title="Load a starter template" class="rounded-lg bg-gradient-to-br from-acc-green to-acc-lime px-3 py-1 font-bold text-[#06210f] shadow-[0_4px_16px_rgba(74,222,128,.28)] transition-all hover:from-acc-lime hover:to-acc-green hover:shadow-[0_6px_22px_rgba(163,230,53,.35)]">
+        <span class="flex items-center gap-1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>template</span>
+      </button>
     </div>
 
-    <div class="tb-group">
-      <button class="tbtn" id="btnSplit" title="Toggle editor/viewer split">⇅ layout</button>
+    <div class="pr-2 border-r border-line">
+      <button id="btnSplit" title="Toggle editor/viewer layout" class="rounded-lg border border-line bg-white/[0.045] px-2.5 py-1 text-mist transition-colors hover:border-acc-green hover:text-acc-green">
+        <span class="flex items-center gap-1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 3v18M3 3v18H21V3z"/></svg>layout</span>
+      </button>
     </div>
 
-    <div class="tb-group">
-      <span class="tb-label">export</span>
-      <button class="tbtn" id="btnSvg" title="Download as SVG">SVG</button>
-      <button class="tbtn" id="btnPng" title="Download as PNG">PNG</button>
-      <button class="tbtn" id="btnMd" title="Copy Mermaid source as Markdown">MD</button>
-      <button class="tbtn" id="btnCopy" title="Copy Mermaid source">⧉ copy</button>
+    <div class="flex items-center gap-1 pr-2 border-r border-line">
+      <span class="mr-1 text-[10px] uppercase tracking-wider text-faint">export</span>
+      <button id="btnSvg" title="Download SVG" class="tb-btn">SVG</button>
+      <button id="btnPng" title="Download PNG" class="tb-btn">PNG</button>
+      <button id="btnMd" title="Copy as Markdown" class="tb-btn">MD</button>
+      <button id="btnCopy" title="Copy source" class="tb-btn px-2"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
     </div>
 
-    <div class="tb-group">
-      <span class="tb-label">file</span>
-      <button class="tbtn" id="btnNew" title="New diagram">new</button>
-      <button class="tbtn" id="btnLoad" title="Load a .mmd file">open</button>
-      <button class="tbtn" id="btnSave" title="Download as .mmd">save</button>
-      <input type="file" id="fileInput" accept=".mmd,.txt,.md" style="display:none">
+    <div class="flex items-center gap-1 pr-2 border-r border-line">
+      <span class="mr-1 text-[10px] uppercase tracking-wider text-faint">file</span>
+      <button id="btnNew" title="New diagram" class="tb-btn">new</button>
+      <button id="btnLoad" title="Open .mmd" class="tb-btn">open</button>
+      <button id="btnSave" title="Download .mmd" class="tb-btn">save</button>
+      <input type="file" id="fileInput" accept=".mmd,.txt,.md" class="hidden">
     </div>
 
-    <div class="tb-group">
-      <span class="tb-label">help</span>
-      <button class="tbtn" id="btnPalette" title="Toggle the insert palette">palette</button>
-      <button class="tbtn" id="btnSnippets" title="Insert a snippet">snippets</button>
-      <button class="tbtn" id="btnHelp" title="Keyboard shortcuts & docs">?</button>
+    <div class="flex items-center gap-1">
+      <span class="mr-1 text-[10px] uppercase tracking-wider text-faint">help</span>
+      <button id="btnPalette" title="Toggle insert palette" class="tb-btn">palette</button>
+      <button id="btnSnippets" title="Insert snippet" class="tb-btn">snippets</button>
+      <button id="btnHelp" title="Keyboard shortcuts & docs" class="tb-btn px-2"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button>
     </div>
   </div>
 
-  <div id="paletteBackdrop"></div>
-  <button id="btnPaletteFab" title="Open the insert palette"><span class="ico">▦</span> palette</button>
+  <div id="paletteBackdrop" class="hidden fixed inset-0 z-50 bg-black/50 opacity-0 transition-opacity pointer-events-none"></div>
+  <button id="btnPaletteFab" title="Open insert palette" class="hidden fixed bottom-5 left-4 z-[60] items-center gap-2 rounded-full bg-gradient-to-br from-acc-green to-acc-lime px-4 py-3 font-bold text-[#06210f] shadow-[0_6px_20px_rgba(0,0,0,.45)]">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    palette
+  </button>
 
-  <div id="split">
-    <div class="pane" id="palettePane">
-      <div class="pane-head">
-        <span>palette</span>
-        <span class="sp"></span>
-        <span class="hint" id="paletteType">flowchart</span>
+  <!-- Split panes -->
+  <div id="split" class="grid min-h-0 flex-1 grid-cols-[auto_1fr_1fr] gap-px border-line bg-line/40 p-2.5">
+    <!-- Palette -->
+    <div id="palettePane" class="pointer-events-auto flex min-h-0 w-[210px] flex-col overflow-hidden rounded-xl border border-line bg-gradient-to-b from-white/[0.03] to-transparent backdrop-blur-xl flex-shrink-0">
+      <div class="flex items-center gap-2 border-b border-line px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-mist">
+        <span>palette</span><span class="flex-1"></span><span id="paletteType" class="text-[10px] normal-case tracking-normal text-faint">flowchart</span>
       </div>
-      <div id="paletteBody"></div>
+      <div id="paletteBody" class="flex-1 overflow-y-auto p-2.5"></div>
     </div>
 
-    <div class="pane" id="editorPane">
-      <div class="pane-head">
-        <span>editor</span>
-        <span class="ln" id="lineCol">1:1</span>
-        <span class="sp"></span>
-        <span class="hint">Ctrl+Enter to render</span>
+    <!-- Editor -->
+    <div id="editorPane" class="flex min-w-0 flex-col overflow-hidden rounded-xl bg-white/[0.02] border border-line">
+      <div class="flex items-center gap-2 border-b border-line bg-gradient-to-b from-white/[0.055] to-white/[0.01] px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-mist backdrop-blur-xl">
+        <span>editor</span><span id="lineCol" class="text-acc-cyan">1:1</span><span class="flex-1"></span><span class="text-faint normal-case tracking-normal">Ctrl+Enter to render</span>
       </div>
-      <div id="editorWrap">
-        <div id="gutter"><div id="gutterInner"></div></div>
-        <div id="codeLayer">
-          <pre id="hl" aria-hidden="true"></pre>
-          <textarea id="editor" spellcheck="false" placeholder="%% Write Mermaid code here — it renders live&#10;flowchart TD&#10;    A[Start] --> B{Decision}&#10;    B -->|yes| C[Go]&#10;    B -->|no| D[Stop]"></textarea>
+      <div id="editorWrap" class="relative flex min-h-0 flex-1 overflow-hidden bg-[radial-gradient(600px_300px_at_0%_0%,rgba(74,222,128,.05),transparent_60%)] rounded-b-xl">
+        <div id="gutter" class="relative w-11 flex-shrink-0 select-none overflow-hidden border-r border-line bg-white/[0.02] pt-3.5 font-mono text-[13px] leading-[1.6]"><div id="gutterInner"></div></div>
+        <div id="codeLayer" class="relative min-w-0 flex-1 overflow-hidden">
+          <pre id="hl" aria-hidden="true" class="m-0 overflow-hidden whitespace-pre p-3.5 text-[13px] leading-[1.6] tab-size-2 text-ink"></pre>
+          <textarea id="editor" spellcheck="false" class="absolute inset-0 h-full w-full resize-none overflow-auto whitespace-pre border-0 bg-transparent p-3.5 text-[13px] leading-[1.6] tab-size-2 outline-none" placeholder="%% Write Mermaid code here — it renders live&#10;flowchart TD&#10;    A[Start] --> B{Decision}&#10;    B -->|yes| C[Go]&#10;    B -->|no| D[Stop]"></textarea>
         </div>
       </div>
-      <div id="errbar"></div>
+      <div id="errbar" class="hidden max-h-[110px] overflow-auto border-t border-acc-red/40 bg-acc-red/10 px-3.5 py-2 text-[11px] whitespace-pre-wrap text-acc-red"></div>
     </div>
 
-    <div class="pane" id="viewerPane">
-      <div class="pane-head">
-        <span>viewer</span>
-        <span class="sp"></span>
-        <span class="hint" id="viewerHint">live</span>
+    <!-- Viewer -->
+    <div id="viewerPane" class="relative flex min-w-0 flex-col overflow-hidden rounded-xl bg-white/[0.015]">
+      <div class="flex items-center gap-2 border-b border-line bg-gradient-to-b from-white/[0.055] to-white/[0.01] px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-mist backdrop-blur-xl">
+        <span>viewer</span><span class="flex-1"></span><span id="viewerHint" class="text-faint normal-case tracking-normal">live</span>
       </div>
-      <div id="viewer">
-        <div id="empty">
-          <span class="big">◈</span>
-          Write Mermaid code in the editor.<br>
-          The graph renders here <b>live</b>.<br>
-          Press <code>Ctrl+Enter</code> or start typing.
+      <div id="viewer" class="relative flex min-h-0 flex-1 items-start justify-center overflow-auto bg-[rgba(4,8,16,.35)] p-5">
+        <div id="empty" class="m-auto p-16 text-center text-xs leading-[2.2] text-mist">
+          <div class="mb-2 text-2xl text-faint">flow</div>
+          Write Mermaid code in the editor.<br>The graph renders here <b class="text-acc-green">live</b>.<br>
+          Press <code class="rounded-md border border-line bg-white/[0.045] px-1.5 py-0.5 text-acc-cyan">Ctrl+Enter</code> or start typing.
         </div>
       </div>
-      <!-- floating viewer controls -->
-      <div id="viewerTools">
-        <label class="vtool" id="vtThemeLabel" title="Diagram color theme">
-          <span class="ico">🎨</span>
+      <!-- floating viewer tools -->
+      <div id="viewerTools" class="absolute bottom-3.5 right-3.5 z-20 flex items-center gap-1 rounded-xl border border-linehi bg-[rgba(12,18,14,.72)] p-1.5 shadow-[0_6px_20px_rgba(0,0,0,.4)] backdrop-blur-xl">
+        <label id="vtThemeLabel" title="Diagram color theme" class="vtool px-2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-mist"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="10.5" r="2.5"/><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="6.5" cy="12.5" r="2.5"/><path d="M12 13a5 5 0 0 0 5 5"/></svg>
           <select id="theme" class="vt-select" title="Theme">
-            <option value="default" selected>default</option>
-            <option value="dark">dark</option>
-            <option value="forest">forest</option>
-            <option value="neutral">neutral</option>
-            <option value="ocean">ocean</option>
-            <option value="solarized-dark">solarized-dark</option>
-            <option value="solarized-light">solarized-light</option>
-            <option value="monochrome">monochrome</option>
-            <option value="neon-cyber">neon-cyber</option>
-            <option value="pastel">pastel</option>
-            <option value="autumn">autumn</option>
-            <option value="midnight">midnight</option>
-            <option value="base">base</option>
+            <option value="default" selected>default</option><option value="dark">dark</option><option value="forest">forest</option>
+            <option value="neutral">neutral</option><option value="ocean">ocean</option><option value="solarized-dark">solarized-dark</option>
+            <option value="solarized-light">solarized-light</option><option value="monochrome">monochrome</option><option value="neon-cyber">neon-cyber</option>
+            <option value="pastel">pastel</option><option value="autumn">autumn</option><option value="midnight">midnight</option><option value="base">base</option>
           </select>
         </label>
-        <input type="color" id="accentColor" class="vtool vt-color" value="#4ade80" title="Accent (base theme)">
-        <input type="color" id="bgColor" class="vtool vt-color" value="#0a0e0c" title="Background (base theme)">
-        <button class="vtool" id="vtGrid" title="Cycle grid background"><span class="ico">▦</span><span class="vt-label" id="vtGridLabel">grid</span></button>
-        <button class="vtool" id="vtZoomIn" title="Zoom in"><span class="ico">+</span></button>
-        <button class="vtool" id="vtZoomOut" title="Zoom out"><span class="ico">−</span></button>
-        <button class="vtool" id="vtCenter" title="Center diagram"><span class="ico">⌖</span></button>
-        <button class="vtool" id="vtReset" title="Reset view (1:1)"><span class="ico">⣿</span></button>
-        <button class="vtool" id="vtFit" title="Fit to view"><span class="ico">⤢</span></button>
-        <button class="vtool" id="vtPng" title="Export PNG"><span class="ico">⬇</span></button>
+        <input type="color" id="accentColor" title="Accent (base theme)" value="#4ade80" class="h-6 w-6 cursor-pointer rounded-md border border-line p-0.5">
+        <input type="color" id="bgColor" title="Background (base theme)" value="#0a0e0c" class="h-6 w-6 cursor-pointer rounded-md border border-line p-0.5">
+        <button id="vtGrid" title="Cycle grid background" class="vtool"><span id="vtGridLabel" class="vt-label">grid</span></button>
+        <button id="vtZoomIn" title="Zoom in" class="vtool"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4-4M8 11h6M11 8v6"/></svg></button>
+        <button id="vtZoomOut" title="Zoom out" class="vtool"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4-4M8 11h6"/></svg></button>
+        <button id="vtCenter" title="Center diagram" class="vtool"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v6M12 16v6M2 12h6M16 12h6"/></svg></button>
+        <button id="vtReset" title="Reset view (1:1)" class="vtool"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.7 9.7 0 0 0-6.7 2.8L3 8"/><path d="M3 3v5h5"/></svg></button>
+        <button id="vtFit" title="Fit to view" class="vtool"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+        <button id="vtPng" title="Export PNG" class="vtool"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></button>
       </div>
     </div>
   </div>
 </div>
 
 <!-- Snippets panel -->
-<div id="snippets">
-  <div class="pane-head">
-    <span>snippets</span>
-    <span class="sp"></span>
-    <button class="modal-close" id="btnSnippetsClose">✕</button>
+<div id="snippets" class="fixed inset-y-0 right-0 z-[45] hidden w-full max-w-[340px] flex-col border-l border-linehi bg-[rgba(10,14,20,.95)] shadow-[-8px_0_30px_rgba(0,0,0,.4)] backdrop-blur-xl">
+  <div class="flex items-center gap-2 border-b border-line px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-mist">
+    <span>snippets</span><span class="flex-1"></span>
+    <button id="btnSnippetsClose" class="rounded-md border border-line px-2 py-0.5 text-[11px] text-mist transition-colors hover:border-acc-red hover:text-acc-red">close</button>
   </div>
-  <div class="s-body" id="snippetsBody"></div>
+  <div id="snippetsBody" class="flex-1 overflow-auto p-3"></div>
 </div>
 
 <!-- Help modal -->
-<div id="modal">
-  <div class="modal-box">
-    <div class="modal-head">
-      <span>mermaid canvas — help</span>
-      <span class="sp"></span>
-      <button class="modal-close" id="btnHelpClose">✕</button>
+<div id="modal" class="fixed inset-0 z-[70] hidden items-center justify-center bg-black/60 p-5">
+  <div class="flex max-h-[86vh] w-full max-w-[720px] flex-col overflow-hidden rounded-2xl border border-linehi bg-[#0d1117] shadow-2xl backdrop-blur-xl">
+    <div class="flex items-center gap-3 border-b border-line px-5 py-3 text-xs font-semibold uppercase tracking-widest text-acc-green">
+      <span>mermaid canvas — help</span><span class="flex-1"></span>
+      <button id="btnHelpClose" class="rounded-md border border-line px-2 py-0.5 text-[11px] text-mist transition-colors hover:border-acc-red hover:text-acc-red">close</button>
     </div>
-    <div class="modal-body" id="modalBody"></div>
-    <div class="modal-foot">
-      <button class="tbtn pri" id="btnHelpOk">got it</button>
+    <div id="modalBody" class="overflow-auto p-5 text-xs leading-relaxed text-mist"></div>
+    <div class="flex justify-end gap-2 border-t border-line px-5 py-3">
+      <button id="btnHelpOk" class="rounded-lg bg-gradient-to-br from-acc-green to-acc-lime px-4 py-2 text-xs font-bold text-[#06210f]">got it</button>
     </div>
   </div>
 </div>
 
-<div id="toast"></div>
+<div id="toast" class="pointer-events-none fixed bottom-6 left-1/2 z-[99] -translate-x-1/2 translate-y-20 rounded-lg bg-acc-green px-6 py-2.5 text-xs font-bold text-[#06210f] shadow-lg transition-transform duration-200"></div>
+
+<!-- shared toolbar button style -->
+<style>.tb-btn{display:inline-flex;align-items:center;gap:.25rem;border-radius:.5rem;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.045);color:#8fb0a0;padding:.25rem .625rem;font-size:11px;white-space:nowrap;transition:all .12s}.tb-btn:hover:not(:disabled){border-color:#4ade80;color:#4ade80;box-shadow:0 0 12px rgba(74,222,128,.18)}.vtool{display:flex;align-items:center;justify-content:center;gap:4px;min-width:30px;height:30px;padding:0 6px;border-radius:8px;background:transparent;border:1px solid transparent;color:#8fb0a0;font-size:15px;cursor:pointer;transition:.12s}.vtool:hover{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.16);color:#4ade80}.vtool.active{color:#4ade80;box-shadow:inset 0 0 0 1px #4ade80}.vt-label{font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:#5f7a6a}.vtool.active .vt-label{color:#4ade80}</style>
 
 <script src="mermaid.min.js"></script>
 <script>
@@ -508,14 +204,9 @@ var state = {
   theme: 'default',
   accent: '#4ade80',
   bg: '#0a0e0c',
-  zoom: 1,
-  panX: 0,
-  panY: 0,
-  fit: false,
-  lastRender: null,   // {svg, code}
-  renderTimer: null,
-  dirty: false,
-  vertical: false,
+  zoom: 1, panX: 0, panY: 0, fit: false,
+  lastRender: null, renderTimer: null,
+  dirty: false, vertical: false,
 };
 
 var $ = function(id){ return document.getElementById(id); };
@@ -527,211 +218,76 @@ var statusText = $('statusText');
 var hlEl = $('hl');
 var gutterInner = $('gutterInner');
 
-/* ================= Editor: syntax highlighting + line numbers =================
-   The textarea is transparent over a highlighted <pre>; both scroll in sync. */
+/* ================= Editor: syntax highlighting + line numbers ================= */
 function highlightMermaid(code){
-  if (!code){
-    hlEl.innerHTML = '';
-    return;
-  }
-  var esc = code.replace(/[&<>]/g, function(c){
-    return c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;';
-  });
-  // Tokenize line by line to keep it simple and robust
+  if (!code){ hlEl.innerHTML = ''; return; }
+  var esc = code.replace(/[&<>]/g, function(c){ return c==='&'?'&amp;':c==='<'?'&lt;':'&gt;'; });
   var lines = esc.split('\n');
   var out = [];
   for (var i = 0; i < lines.length; i++){
-    var line = lines[i];
-    var html = line.replace(
+    var html = lines[i].replace(
       /(#?%%[^\n]*)|("(?:[^"\\]|\\.)*"|'[^']*')|((?:^|\s)(?:flowchart|sequenceDiagram|classDiagram|stateDiagram|stateDiagram-v2|erDiagram|gantt|pie|journey|gitGraph|C4(?:Context|Container|Component|Dynamic)?|mindmap|timeline|quadrantChart|sankey|sankey-beta|xychart-beta|block-beta|packet-beta|architecture-beta|subgraph|end|direction|section|participant|actor|activate|deactivate|class|note|alt|else|opt|loop|par|and|box|state|style|classDef|linkStyle)(?=$|\s|&))|((?:-->|--x|--o|-.->|==>|~~~|<--|o--|\+\+\+|--))|([\[\]{}()<>])/gi,
       function(m, cmt, str, kw, edge, punc){
-        if (cmt) return '<span class="tok-cmt">' + cmt + '</span>';
-        if (str) return '<span class="tok-str">' + str + '</span>';
-        if (kw) return '<span class="tok-kw">' + kw + '</span>';
-        if (edge) return '<span class="tok-edge">' + edge + '</span>';
-        return '<span class="tok-punc">' + punc + '</span>';
+        if (cmt) return '<span class="tok-cmt">'+cmt+'</span>';
+        if (str) return '<span class="tok-str">'+str+'</span>';
+        if (kw) return '<span class="tok-kw">'+kw+'</span>';
+        if (edge) return '<span class="tok-edge">'+edge+'</span>';
+        return '<span class="tok-punc">'+punc+'</span>';
       }
     );
     out.push(html || '&nbsp;');
   }
   hlEl.innerHTML = out.join('\n');
 }
-
 function renderGutter(){
   var lines = editor.value.split('\n').length;
   var nums = [];
   for (var i = 1; i <= lines; i++) nums.push(i);
   gutterInner.textContent = nums.join('\n');
-  gutterInner.style.paddingTop = '14px';
 }
-
 function syncScroll(){
   hlEl.scrollTop = editor.scrollTop;
   hlEl.scrollLeft = editor.scrollLeft;
   gutterInner.style.transform = 'translateY(-' + editor.scrollTop + 'px)';
 }
-
-function refreshEditor(){
-  highlightMermaid(editor.value);
-  renderGutter();
-  updateLineCol();
+function refreshEditor(){ highlightMermaid(editor.value); renderGutter(); updateLineCol(); }
+function updateLineCol(){
+  var v = editor.value, pos = editor.selectionStart, before = v.substring(0, pos);
+  var line = (before.match(/\n/g)||[]).length + 1, lastNl = before.lastIndexOf('\n');
+  $('lineCol').textContent = line + ':' + (pos - lastNl);
 }
 
 /* ================= Mermaid init ================= */
 mermaid.initialize({
-  startOnLoad: false,
-  securityLevel: 'loose',
-  theme: 'default',
+  startOnLoad: false, securityLevel: 'loose', theme: 'default',
   fontFamily: 'ui-monospace, SF Mono, Menlo, Consolas, monospace',
   flowchart: { htmlLabels: true, curve: 'basis', padding: 12 },
   sequence: { useMaxWidth: true, mirrorActors: false },
-  themeVariables: {
-    fontFamily: 'ui-monospace, SF Mono, Menlo, Consolas, monospace',
-    primaryColor: '#1e2d22',
-    primaryTextColor: '#d7e4dc',
-    primaryBorderColor: '#4ade80',
-    lineColor: '#6b8878',
-    secondaryColor: '#111512',
-    tertiaryColor: '#0d120f',
-    background: '#0a0e0c',
-    mainBkg: '#111512',
-    nodeBorder: '#4ade80',
-    clusterBkg: '#0d120f',
-    clusterBorder: '#26382c',
-    titleColor: '#d7e4dc',
-    edgeLabelBackground: '#111512',
-    nodeTextColor: '#d7e4dc',
-  }
 });
 
 /* ================= Rendering ================= */
 function setStatus(cls, text){
-  statusDot.className = 'dot ' + cls;
+  statusDot.className = 'h-1.5 w-1.5 rounded-full ' + (cls==='ok'?'bg-acc-green shadow-[0_0_8px_#4ade80]':cls==='err'?'bg-acc-red shadow-[0_0_8px_#f87171]':'bg-acc-amber animate-pulse');
   statusText.textContent = text;
 }
 
-/* Custom palettes for the 8 curated themes (used via Mermaid 'base' theme with
-   our own themeVariables). Each maps the node/edge/background colors. */
+/* Theme palettes */
 var THEMES = {
-  ocean: {
-    theme: 'base',
-    themeVariables: {
-      fontFamily: 'ui-monospace, SF Mono, Menlo, Consolas, monospace',
-      primaryColor: '#0b2434', primaryTextColor: '#e0f2fe', primaryBorderColor: '#38bdf8',
-      lineColor: '#7dd3fc', secondaryColor: '#082f49', tertiaryColor: '#082f49',
-      background: '#041824', mainBkg: '#0b2434', nodeBorder: '#38bdf8',
-      clusterBkg: '#0a1f2d', clusterBorder: '#155e75', titleColor: '#bae6fd',
-      edgeLabelBackground: '#0b2434', nodeTextColor: '#e0f2fe', fontSize: '14px',
-    },
-  },
-  'solarized-dark': {
-    theme: 'base',
-    themeVariables: {
-      fontFamily: 'ui-monospace, SF Mono, Menlo, Consolas, monospace',
-      primaryColor: '#073642', primaryTextColor: '#fdf6e3', primaryBorderColor: '#cb4b16',
-      lineColor: '#839496', secondaryColor: '#002b36', tertiaryColor: '#002b36',
-      background: '#002b36', mainBkg: '#073642', nodeBorder: '#268bd2',
-      clusterBkg: '#002b36', clusterBorder: '#586e75', titleColor: '#b58900',
-      edgeLabelBackground: '#073642', nodeTextColor: '#fdf6e3', fontSize: '14px',
-    },
-  },
-  'solarized-light': {
-    theme: 'base',
-    themeVariables: {
-      fontFamily: 'ui-monospace, SF Mono, Menlo, Consolas, monospace',
-      primaryColor: '#eee8d5', primaryTextColor: '#073642', primaryBorderColor: '#cb4b16',
-      lineColor: '#839496', secondaryColor: '#fdf6e3', tertiaryColor: '#fdf6e3',
-      background: '#fdf6e3', mainBkg: '#eee8d5', nodeBorder: '#268bd2',
-      clusterBkg: '#fdf6e3', clusterBorder: '#93a1a1', titleColor: '#b58900',
-      edgeLabelBackground: '#eee8d5', nodeTextColor: '#073642', fontSize: '14px',
-    },
-  },
-  monochrome: {
-    theme: 'base',
-    themeVariables: {
-      fontFamily: 'ui-monospace, SF Mono, Menlo, Consolas, monospace',
-      primaryColor: '#1c1c1c', primaryTextColor: '#e8e8e8', primaryBorderColor: '#9a9a9a',
-      lineColor: '#c8c8c8', secondaryColor: '#2a2a2a', tertiaryColor: '#2a2a2a',
-      background: '#0d0d0d', mainBkg: '#1c1c1c', nodeBorder: '#9a9a9a',
-      clusterBkg: '#141414', clusterBorder: '#4a4a4a', titleColor: '#f0f0f0',
-      edgeLabelBackground: '#1c1c1c', nodeTextColor: '#e8e8e8', fontSize: '14px',
-    },
-  },
-  'neon-cyber': {
-    theme: 'base',
-    themeVariables: {
-      fontFamily: 'ui-monospace, SF Mono, Menlo, Consolas, monospace',
-      primaryColor: '#12003d', primaryTextColor: '#f0fffe', primaryBorderColor: '#ff2a88',
-      lineColor: '#00ffd0', secondaryColor: '#1a0a4a', tertiaryColor: '#1a0a4a',
-      background: '#050014', mainBkg: '#12003d', nodeBorder: '#ff2a88',
-      clusterBkg: '#0d0030', clusterBorder: '#7a00ff', titleColor: '#ffd700',
-      edgeLabelBackground: '#12003d', nodeTextColor: '#f0fffe', fontSize: '14px',
-    },
-  },
-  pastel: {
-    theme: 'base',
-    themeVariables: {
-      fontFamily: 'ui-monospace, SF Mono, Menlo, Consolas, monospace',
-      primaryColor: '#fde4ec', primaryTextColor: '#5b3a55', primaryBorderColor: '#f9a8d4',
-      lineColor: '#b8bedd', secondaryColor: '#e7f6e7', tertiaryColor: '#e7f6e7',
-      background: '#fdf6f3', mainBkg: '#fde4ec', nodeBorder: '#f9a8d4',
-      clusterBkg: '#e7f6e7', clusterBorder: '#bbf7d0', titleColor: '#a78bfa',
-      edgeLabelBackground: '#fde4ec', nodeTextColor: '#5b3a55', fontSize: '14px',
-    },
-  },
-  autumn: {
-    theme: 'base',
-    themeVariables: {
-      fontFamily: 'ui-monospace, SF Mono, Menlo, Consolas, monospace',
-      primaryColor: '#3a2410', primaryTextColor: '#fcebd5', primaryBorderColor: '#f59e0b',
-      lineColor: '#d6a36a', secondaryColor: '#33200e', tertiaryColor: '#33200e',
-      background: '#1d1308', mainBkg: '#3a2410', nodeBorder: '#f59e0b',
-      clusterBkg: '#2a1a0b', clusterBorder: '#92400e', titleColor: '#fbbf24',
-      edgeLabelBackground: '#3a2410', nodeTextColor: '#fcebd5', fontSize: '14px',
-    },
-  },
-  midnight: {
-    theme: 'base',
-    themeVariables: {
-      fontFamily: 'ui-monospace, SF Mono, Menlo, Consolas, monospace',
-      primaryColor: '#1e1b4b', primaryTextColor: '#e0e7ff', primaryBorderColor: '#818cf8',
-      lineColor: '#a5b4fc', secondaryColor: '#312e81', tertiaryColor: '#312e81',
-      background: '#0d0b2e', mainBkg: '#1e1b4b', nodeBorder: '#818cf8',
-      clusterBkg: '#151240', clusterBorder: '#4338ca', titleColor: '#c7d2fe',
-      edgeLabelBackground: '#1e1b4b', nodeTextColor: '#e0e7ff', fontSize: '14px',
-    },
-  },
+  ocean: { themeVariables: { fontFamily:'ui-monospace,SF Mono,Menlo,Consolas,monospace', primaryColor:'#0b2434',primaryTextColor:'#e0f2fe',primaryBorderColor:'#38bdf8',lineColor:'#7dd3fc',secondaryColor:'#082f49',tertiaryColor:'#082f49',background:'#041824',mainBkg:'#0b2434',nodeBorder:'#38bdf8',clusterBkg:'#0a1f2d',clusterBorder:'#155e75',titleColor:'#bae6fd',edgeLabelBackground:'#0b2434',nodeTextColor:'#e0f2fe',fontSize:'14px' } },
+  'solarized-dark': { themeVariables: { fontFamily:'ui-monospace,SF Mono,Menlo,Consolas,monospace', primaryColor:'#073642',primaryTextColor:'#fdf6e3',primaryBorderColor:'#cb4b16',lineColor:'#839496',secondaryColor:'#002b36',tertiaryColor:'#002b36',background:'#002b36',mainBkg:'#073642',nodeBorder:'#268bd2',clusterBkg:'#002b36',clusterBorder:'#586e75',titleColor:'#b58900',edgeLabelBackground:'#073642',nodeTextColor:'#fdf6e3',fontSize:'14px' } },
+  'solarized-light': { themeVariables: { fontFamily:'ui-monospace,SF Mono,Menlo,Consolas,monospace', primaryColor:'#eee8d5',primaryTextColor:'#073642',primaryBorderColor:'#cb4b16',lineColor:'#839496',secondaryColor:'#fdf6e3',tertiaryColor:'#fdf6e3',background:'#fdf6e3',mainBkg:'#eee8d5',nodeBorder:'#268bd2',clusterBkg:'#fdf6e3',clusterBorder:'#93a1a1',titleColor:'#b58900',edgeLabelBackground:'#eee8d5',nodeTextColor:'#073642',fontSize:'14px' } },
+  monochrome: { themeVariables: { fontFamily:'ui-monospace,SF Mono,Menlo,Consolas,monospace', primaryColor:'#1c1c1c',primaryTextColor:'#e8e8e8',primaryBorderColor:'#9a9a9a',lineColor:'#c8c8c8',secondaryColor:'#2a2a2a',tertiaryColor:'#2a2a2a',background:'#0d0d0d',mainBkg:'#1c1c1c',nodeBorder:'#9a9a9a',clusterBkg:'#141414',clusterBorder:'#4a4a4a',titleColor:'#f0f0f0',edgeLabelBackground:'#1c1c1c',nodeTextColor:'#e8e8e8',fontSize:'14px' } },
+  'neon-cyber': { themeVariables: { fontFamily:'ui-monospace,SF Mono,Menlo,Consolas,monospace', primaryColor:'#12003d',primaryTextColor:'#f0fffe',primaryBorderColor:'#ff2a88',lineColor:'#00ffd0',secondaryColor:'#1a0a4a',tertiaryColor:'#1a0a4a',background:'#050014',mainBkg:'#12003d',nodeBorder:'#ff2a88',clusterBkg:'#0d0030',clusterBorder:'#7a00ff',titleColor:'#ffd700',edgeLabelBackground:'#12003d',nodeTextColor:'#f0fffe',fontSize:'14px' } },
+  pastel: { themeVariables: { fontFamily:'ui-monospace,SF Mono,Menlo,Consolas,monospace', primaryColor:'#fde4ec',primaryTextColor:'#5b3a55',primaryBorderColor:'#f9a8d4',lineColor:'#b8bedd',secondaryColor:'#e7f6e7',tertiaryColor:'#e7f6e7',background:'#fdf6f3',mainBkg:'#fde4ec',nodeBorder:'#f9a8d4',clusterBkg:'#e7f6e7',clusterBorder:'#bbf7d0',titleColor:'#a78bfa',edgeLabelBackground:'#fde4ec',nodeTextColor:'#5b3a55',fontSize:'14px' } },
+  autumn: { themeVariables: { fontFamily:'ui-monospace,SF Mono,Menlo,Consolas,monospace', primaryColor:'#3a2410',primaryTextColor:'#fcebd5',primaryBorderColor:'#f59e0b',lineColor:'#d6a36a',secondaryColor:'#33200e',tertiaryColor:'#33200e',background:'#1d1308',mainBkg:'#3a2410',nodeBorder:'#f59e0b',clusterBkg:'#2a1a0b',clusterBorder:'#92400e',titleColor:'#fbbf24',edgeLabelBackground:'#3a2410',nodeTextColor:'#fcebd5',fontSize:'14px' } },
+  midnight: { themeVariables: { fontFamily:'ui-monospace,SF Mono,Menlo,Consolas,monospace', primaryColor:'#1e1b4b',primaryTextColor:'#e0e7ff',primaryBorderColor:'#818cf8',lineColor:'#a5b4fc',secondaryColor:'#312e81',tertiaryColor:'#312e81',background:'#0d0b2e',mainBkg:'#1e1b4b',nodeBorder:'#818cf8',clusterBkg:'#151240',clusterBorder:'#4338ca',titleColor:'#c7d2fe',edgeLabelBackground:'#1e1b4b',nodeTextColor:'#e0e7ff',fontSize:'14px' } },
 };
-
 function currentConfig(){
-  var cfg = {
-    startOnLoad: false,
-    securityLevel: 'loose',
-    theme: 'base',
-    fontFamily: 'ui-monospace, SF Mono, Menlo, Consolas, monospace',
-    flowchart: { htmlLabels: true, curve: 'basis', padding: 12 },
-    sequence: { useMaxWidth: true, mirrorActors: false },
-  };
-  // Built-in Mermaid themes pass straight through
-  if (['default','dark','neutral','forest'].indexOf(state.theme) !== -1){
-    cfg.theme = state.theme;
-    return cfg;
-  }
-  // Custom curated themes
-  if (THEMES[state.theme]){
-    cfg.themeVariables = THEMES[state.theme].themeVariables;
-    return cfg;
-  }
-  // 'base' theme — full custom control via the color pickers
+  var cfg = { startOnLoad:false, securityLevel:'loose', theme:'base', fontFamily:'ui-monospace, SF Mono, Menlo, Consolas, monospace', flowchart:{htmlLabels:true,curve:'basis',padding:12}, sequence:{useMaxWidth:true,mirrorActors:false} };
+  if (['default','dark','neutral','forest'].indexOf(state.theme)!==-1){ cfg.theme = state.theme; return cfg; }
+  if (THEMES[state.theme]){ cfg.themeVariables = THEMES[state.theme].themeVariables; return cfg; }
   if (state.theme === 'base'){
-    cfg.themeVariables = {
-      fontFamily: 'ui-monospace, SF Mono, Menlo, Consolas, monospace',
-      primaryColor: '#1e2d22', primaryTextColor: '#d7e4dc', primaryBorderColor: state.accent,
-      lineColor: '#6b8878', secondaryColor: '#111512', tertiaryColor: '#0d120f',
-      background: state.bg, mainBkg: '#111512', nodeBorder: state.accent,
-      clusterBkg: '#0d120f', clusterBorder: '#26382c', titleColor: '#d7e4dc',
-      edgeLabelBackground: '#111512', nodeTextColor: '#d7e4dc', fontSize: '14px',
-    };
+    cfg.themeVariables = { fontFamily:'ui-monospace, SF Mono, Menlo, Consolas, monospace', primaryColor:'#1e2d22',primaryTextColor:'#d7e4dc',primaryBorderColor:state.accent,lineColor:'#6b8878',secondaryColor:'#111512',tertiaryColor:'#0d120f',background:state.bg,mainBkg:'#111512',nodeBorder:state.accent,clusterBkg:'#0d120f',clusterBorder:'#26382c',titleColor:'#d7e4dc',edgeLabelBackground:'#111512',nodeTextColor:'#d7e4dc',fontSize:'14px' };
   }
   return cfg;
 }
@@ -739,873 +295,362 @@ function currentConfig(){
 function render(force){
   var code = editor.value;
   if (!code.trim()){
-    viewer.innerHTML = '<div id="empty"><span class="big">◈</span>Write Mermaid code in the editor.<br>The graph renders here <b>live</b>.</div>';
-    errbar.classList.remove('show');
-    setStatus('ok','ready');
-    state.lastRender = null;
-    return;
+    viewer.innerHTML = '<div id="empty" class="m-auto p-16 text-center text-xs leading-[2.2] text-mist"><div class="mb-2 text-2xl text-faint">flow</div>Write Mermaid code in the editor.<br>The graph renders here <b class="text-acc-green">live</b>.</div>';
+    errbar.classList.add('hidden'); setStatus('ok','ready'); state.lastRender=null; return;
   }
-  if (!force && state.lastRender && state.lastRender.code === code) return;
-
-  setStatus('busy','rendering…');
+  if (!force && state.lastRender && state.lastRender.code===code) return;
+  setStatus('busy','rendering');
   mermaid.initialize(currentConfig());
   var id = 'mermaid-' + Date.now();
   try {
     mermaid.render(id, code).then(function(res){
       viewer.innerHTML = res.svg;
-      // Mermaid renders an error SVG (with .error-icon/.error-text) instead of
-      // rejecting the promise on parse failure — detect it and surface the message.
       var errSvg = viewer.querySelector('.error-icon, .error-text');
       if (errSvg){
         var msg = viewer.querySelector('.error-text') ? viewer.querySelector('.error-text').textContent : 'Mermaid parse error';
-        errbar.textContent = '✖ ' + msg;
-        errbar.classList.add('show');
-        setStatus('err','error');
-        state.lastRender = null;
-        return;
+        errbar.textContent = 'Parse error: ' + msg; errbar.classList.remove('hidden'); setStatus('err','error'); state.lastRender=null; return;
       }
-      errbar.classList.remove('show');
-      setStatus('ok','rendered');
-      state.lastRender = { svg: res.svg, code: code };
-      applyZoom();
-      // In base (custom) theme, the background color picker should visibly
-      // tint the graph canvas — Mermaid's own `background` theme var only
-      // affects cluster fills and the SVG stays transparent, so paint a rect.
+      errbar.classList.add('hidden'); setStatus('ok','rendered'); state.lastRender={svg:res.svg,code:code};
       if (state.theme === 'base'){
         var svg = viewer.querySelector('svg');
-        if (svg){
-          svg.style.background = state.bg;
-          svg.style.borderRadius = '8px';
-        }
+        if (svg){ svg.style.background = state.bg; svg.style.borderRadius = '8px'; }
       }
-      // make links open in new tab
+      applyZoom();
       viewer.querySelectorAll('a').forEach(function(a){
-        if (a.getAttribute('href') && a.getAttribute('href').indexOf('#') !== 0){
-          a.setAttribute('target','_blank');
-          a.setAttribute('rel','noreferrer');
-        }
+        if (a.getAttribute('href') && a.getAttribute('href').indexOf('#')!==0){ a.setAttribute('target','_blank'); a.setAttribute('rel','noreferrer'); }
       });
-    }).catch(function(e){
-      showError(e);
-    });
-  } catch(e){
-    showError(e);
-  }
+    }).catch(function(e){ showError(e); });
+  } catch(e){ showError(e); }
 }
-
-function showError(e){
-  var msg = (e && e.message) ? e.message : String(e);
-  errbar.textContent = '✖ ' + msg;
-  errbar.classList.add('show');
-  setStatus('err','error');
-  state.lastRender = null;
-}
-
-function scheduleRender(){
-  clearTimeout(state.renderTimer);
-  state.renderTimer = setTimeout(function(){ render(false); }, 350);
-}
+function showError(e){ var msg=(e&&e.message)?e.message:String(e); errbar.textContent='Parse error: '+msg; errbar.classList.remove('hidden'); setStatus('err','error'); state.lastRender=null; }
+function scheduleRender(){ clearTimeout(state.renderTimer); state.renderTimer=setTimeout(function(){ render(false); },350); }
 
 /* ================= Zoom + Pan ================= */
 function applyZoom(){
-  var svg = viewer.querySelector('svg');
-  if (!svg) return;
+  var svg = viewer.querySelector('svg'); if (!svg) return;
   if (state.fit){
-    var rect = svg.getBoundingClientRect();
-    var vw = viewer.clientWidth - 40;
-    var vh = viewer.clientHeight - 40;
-    if (rect.width > 0 && rect.height > 0){
-      var s = Math.min(vw / rect.width, vh / rect.height, 1);
-      svg.style.transform = 'translate(' + state.panX + 'px,' + state.panY + 'px) scale(' + s + ')';
-      svg.style.transformOrigin = 'top left';
-      return;
-    }
+    var rect=svg.getBoundingClientRect(), vw=viewer.clientWidth-40, vh=viewer.clientHeight-40;
+    if (rect.width>0 && rect.height>0){ var s=Math.min(vw/rect.width, vh/rect.height,1); svg.style.transform='translate('+state.panX+'px,'+state.panY+'px) scale('+s+')'; svg.style.transformOrigin='top left'; return; }
   }
-  svg.style.transform = 'translate(' + state.panX + 'px,' + state.panY + 'px) scale(' + state.zoom + ')';
-  svg.style.transformOrigin = 'top left';
-  svg.style.cursor = 'grab';
-  svg.style.transformBox = 'fill-box';
+  svg.style.transform='translate('+state.panX+'px,'+state.panY+'px) scale('+state.zoom+')';
+  svg.style.transformOrigin='top left'; svg.style.cursor='grab'; svg.style.transformBox='fill-box';
 }
-
-function resetView(){
-  state.zoom = 1;
-  state.panX = 0;
-  state.panY = 0;
-  state.fit = false;
-  applyZoom();
-}
-
-/* Wheel zoom toward the cursor */
+function resetView(){ state.zoom=1; state.panX=0; state.panY=0; state.fit=false; applyZoom(); }
 function onWheel(e){
-  e.preventDefault();
-  var svg = viewer.querySelector('svg');
-  if (!svg) return;
-  state.fit = false;
-  var rect = svg.getBoundingClientRect();
-  var cx = e.clientX - rect.left;
-  var cy = e.clientY - rect.top;
-  var factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-  var newZoom = Math.min(5, Math.max(0.1, state.zoom * factor));
-  // keep the point under the cursor fixed
-  state.panX = cx - (cx - state.panX) * (newZoom / state.zoom);
-  state.panY = cy - (cy - state.panY) * (newZoom / state.zoom);
-  state.zoom = newZoom;
-  applyZoom();
+  e.preventDefault(); var svg=viewer.querySelector('svg'); if(!svg) return;
+  state.fit=false;
+  var rect=svg.getBoundingClientRect(), cx=e.clientX-rect.left, cy=e.clientY-rect.top;
+  var factor=e.deltaY<0?1.12:1/1.12, newZoom=Math.min(5,Math.max(0.1,state.zoom*factor));
+  state.panX=cx-(cx-state.panX)*(newZoom/state.zoom); state.panY=cy-(cy-state.panY)*(newZoom/state.zoom);
+  state.zoom=newZoom; applyZoom();
 }
-
-/* Drag to pan */
-var drag = { active: false, startX: 0, startY: 0, baseX: 0, baseY: 0 };
-viewer.addEventListener('mousedown', function(e){
-  if (e.button !== 0) return;
-  if (e.target && e.target.tagName === 'A') return; // let links work
-  drag.active = true;
-  drag.startX = e.clientX;
-  drag.startY = e.clientY;
-  drag.baseX = state.panX;
-  drag.baseY = state.panY;
-  viewer.style.cursor = 'grabbing';
-});
-document.addEventListener('mousemove', function(e){
-  if (!drag.active) return;
-  state.panX = drag.baseX + (e.clientX - drag.startX);
-  state.panY = drag.baseY + (e.clientY - drag.startY);
-  applyZoom();
-});
-document.addEventListener('mouseup', function(){
-  if (drag.active){
-    drag.active = false;
-    viewer.style.cursor = '';
-  }
-});
-viewer.addEventListener('wheel', onWheel, { passive: false });
-
-// Touch: single-finger drag to pan
-var touch = { active: false, id: null, startX: 0, startY: 0, baseX: 0, baseY: 0 };
-viewer.addEventListener('touchstart', function(e){
-  if (e.touches.length === 1){
-    var t = e.touches[0];
-    touch.active = true;
-    touch.id = t.identifier;
-    touch.startX = t.clientX;
-    touch.startY = t.clientY;
-    touch.baseX = state.panX;
-    touch.baseY = state.panY;
-  }
-}, { passive: true });
-viewer.addEventListener('touchmove', function(e){
-  if (touch.active && e.touches.length === 1){
-    e.preventDefault();
-    var t = e.touches[0];
-    if (t.identifier === touch.id){
-      state.panX = touch.baseX + (t.clientX - touch.startX);
-      state.panY = touch.baseY + (t.clientY - touch.startY);
-      applyZoom();
-    }
-  }
-}, { passive: false });
-viewer.addEventListener('touchend', function(e){
-  for (var i = 0; i < e.changedTouches.length; i++){
-    if (e.changedTouches[i].identifier === touch.id) touch.active = false;
-  }
-});
+var drag={active:false,startX:0,startY:0,baseX:0,baseY:0};
+viewer.addEventListener('mousedown',function(e){ if(e.button!==0)return; if(e.target&&e.target.tagName==='A')return; drag.active=true; drag.startX=e.clientX; drag.startY=e.clientY; drag.baseX=state.panX; drag.baseY=state.panY; viewer.style.cursor='grabbing'; });
+document.addEventListener('mousemove',function(e){ if(!drag.active)return; state.panX=drag.baseX+(e.clientX-drag.startX); state.panY=drag.baseY+(e.clientY-drag.startY); applyZoom(); });
+document.addEventListener('mouseup',function(){ if(drag.active){ drag.active=false; viewer.style.cursor=''; } });
+viewer.addEventListener('wheel',onWheel,{passive:false});
+var touch={active:false,id:null,startX:0,startY:0,baseX:0,baseY:0};
+viewer.addEventListener('touchstart',function(e){ if(e.touches.length===1){ var t=e.touches[0]; touch.active=true; touch.id=t.identifier; touch.startX=t.clientX; touch.startY=t.clientY; touch.baseX=state.panX; touch.baseY=state.panY; } },{passive:true});
+viewer.addEventListener('touchmove',function(e){ if(touch.active&&e.touches.length===1){ e.preventDefault(); var t=e.touches[0]; if(t.identifier===touch.id){ state.panX=touch.baseX+(t.clientX-touch.startX); state.panY=touch.baseY+(t.clientY-touch.startY); applyZoom(); } } },{passive:false});
+viewer.addEventListener('touchend',function(e){ for(var i=0;i<e.changedTouches.length;i++){ if(e.changedTouches[i].identifier===touch.id) touch.active=false; } });
 
 /* ================= Export ================= */
-function download(name, content, mime){
-  var blob = new Blob([content], {type: mime});
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement('a');
-  a.href = url; a.download = name;
-  document.body.appendChild(a); a.click();
-  setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
-}
-
-function exportSvg(){
-  var svg = viewer.querySelector('svg');
-  if (!svg){ toast('nothing to export', true); return; }
-  var clone = svg.cloneNode(true);
-  clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
-  var xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + clone.outerHTML;
-  download('diagram.svg', xml, 'image/svg+xml');
-  toast('SVG downloaded');
-}
-
+function download(name,content,mime){ var blob=new Blob([content],{type:mime}); var url=URL.createObjectURL(blob); var a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); },100); }
+function exportSvg(){ var svg=viewer.querySelector('svg'); if(!svg){ toast('nothing to export',true); return; } var clone=svg.cloneNode(true); clone.setAttribute('xmlns','http://www.w3.org/2000/svg'); var xml='<?xml version="1.0" encoding="UTF-8"?>\n'+clone.outerHTML; download('diagram.svg',xml,'image/svg+xml'); toast('SVG downloaded'); }
 function exportPng(){
-  var svg = viewer.querySelector('svg');
-  if (!svg){ toast('nothing to export', true); return; }
-
-  // Mermaid renders HTML labels as <foreignObject>, which taint the canvas
-  // when drawn as an <img> ("Tainted canvases may not be exported"). Convert
-  // each <foreignObject> into a plain <text> (inside its already-positioned
-  // <g class="label">) so the drawing is pure SVG and the canvas stays clean.
-  var clone = svg.cloneNode(true);
+  var svg=viewer.querySelector('svg'); if(!svg){ toast('nothing to export',true); return; }
+  var clone=svg.cloneNode(true);
   clone.querySelectorAll('foreignObject').forEach(function(fo){
-    var text = (fo.textContent || '').trim();
-    var g = fo.parentNode;
-    var t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    t.setAttribute('text-anchor', 'middle');
-    t.setAttribute('dominant-baseline', 'central');
-    try { t.setAttribute('x', (parseFloat(fo.getAttribute('x')) || 0)); } catch(e){}
-    try { t.setAttribute('y', (parseFloat(fo.getAttribute('y')) || 0)); } catch(e){}
-    t.textContent = text;
-    if (g){ g.replaceChild(t, fo); }
+    var text=(fo.textContent||'').trim(); var g=fo.parentNode;
+    var t=document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('text-anchor','middle'); t.setAttribute('dominant-baseline','central');
+    t.setAttribute('x',parseFloat(fo.getAttribute('x'))||0); t.setAttribute('y',parseFloat(fo.getAttribute('y'))||0);
+    t.textContent=text; if(g) g.replaceChild(t,fo);
   });
-  // remove any leftover foreignObject (empty ones)
-  clone.querySelectorAll('foreignObject').forEach(function(fo){ if (fo.parentNode) fo.parentNode.removeChild(fo); });
-
-  clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
-  clone.removeAttribute('style'); // drop pan/zoom/cursor inline styles for a clean export
-  clone.setAttribute('width','100%');
-  var xml = '<?xml version="1.0" encoding="UTF-8"?>' + clone.outerHTML;
-  // Load via a data URI — Blob URLs for SVG-in-<img> can fail in some served
-  // contexts, while a data URI is self-contained and always rasterizes.
-  var url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
-  var img = new Image();
-  img.onload = function(){
-    // use the SVG viewBox for intrinsic size (in SVG units), then rasterize at 2x
-    var vb = (clone.getAttribute('viewBox') || '0 0 400 400').split(/\s+/).map(Number);
-    var w = Math.max(vb[2] || 400, 100);
-    var h = Math.max(vb[3] || 400, 100);
-    var scale = 2;
-    var canvas = document.createElement('canvas');
-    canvas.width = w * scale; canvas.height = h * scale;
-    var ctx = canvas.getContext('2d');
-    ctx.fillStyle = state.bg; ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    canvas.toBlob(function(b){
-      var u = URL.createObjectURL(b);
-      var a = document.createElement('a');
-      a.href = u; a.download = 'diagram.png';
-      document.body.appendChild(a); a.click();
-      setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(u); }, 100);
-      URL.revokeObjectURL(url);
-      toast('PNG downloaded');
-    }, 'image/png');
+  clone.querySelectorAll('foreignObject').forEach(function(fo){ if(fo.parentNode) fo.parentNode.removeChild(fo); });
+  clone.setAttribute('xmlns','http://www.w3.org/2000/svg'); clone.removeAttribute('style'); clone.setAttribute('width','100%');
+  var xml='<?xml version="1.0" encoding="UTF-8"?>'+clone.outerHTML;
+  var url='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(xml);
+  var img=new Image();
+  img.onload=function(){
+    var vb=(clone.getAttribute('viewBox')||'0 0 400 400').split(/\s+/).map(Number);
+    var w=Math.max(vb[2]||400,100), h=Math.max(vb[3]||400,100), scale=2;
+    var canvas=document.createElement('canvas'); canvas.width=w*scale; canvas.height=h*scale;
+    var ctx=canvas.getContext('2d'); ctx.fillStyle=state.bg; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+    canvas.toBlob(function(b){ var u=URL.createObjectURL(b); var a=document.createElement('a'); a.href=u; a.download='diagram.png'; document.body.appendChild(a); a.click(); setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(u); },100); toast('PNG downloaded'); },'image/png');
   };
-  img.onerror = function(){ toast('PNG export failed', true); };
-  img.src = url;
+  img.onerror=function(){ toast('PNG export failed',true); };
+  img.src=url;
 }
-
-function exportMd(){
-  var code = editor.value;
-  if (!code.trim()){ toast('nothing to export', true); return; }
-  var md = '```mermaid\n' + code + '\n```';
-  copyText(md);
-  toast('Markdown copied');
-}
-
-function copyText(t){
-  if (navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(t).then(function(){}, function(){ fallbackCopy(t); });
-  } else { fallbackCopy(t); }
-}
-function fallbackCopy(t){
-  var ta = document.createElement('textarea');
-  ta.value = t; document.body.appendChild(ta); ta.select();
-  try { document.execCommand('copy'); } catch(e){}
-  document.body.removeChild(ta);
-}
+function exportMd(){ var code=editor.value; if(!code.trim()){ toast('nothing to export',true); return; } copyText('```mermaid\n'+code+'\n```'); toast('Markdown copied'); }
+function copyText(t){ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(function(){},function(){ fallbackCopy(t); }); } else { fallbackCopy(t); } }
+function fallbackCopy(t){ var ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); }catch(e){} document.body.removeChild(ta); }
 
 /* ================= Toast ================= */
 var toastTimer;
-function toast(msg, isErr){
-  var el = $('toast');
-  el.textContent = msg;
-  el.className = isErr ? 'err' : '';
-  el.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(function(){ el.classList.remove('show'); }, 1800);
-}
+function toast(msg,isErr){ var el=$('toast'); el.textContent=msg; el.className='pointer-events-none fixed bottom-6 left-1/2 z-[99] -translate-x-1/2 rounded-lg px-6 py-2.5 text-xs font-bold shadow-lg transition-transform duration-200 '+(isErr?'bg-acc-red text-[#1a0505]':'bg-acc-green text-[#06210f]'); void el.offsetWidth; el.style.transform='translate(-50%,0)'; clearTimeout(toastTimer); toastTimer=setTimeout(function(){ el.style.transform='translate(-50%,80px)'; },1800); }
 
-/* ================= Snippets ================= */
-var SNIPPETS = [
-  { cat:'flowchart', t:'Flowchart TD', d:'Top-down flowchart with decision', code:'flowchart TD\n    A[Start] --> B{Decision}\n    B -->|yes| C[Go]\n    B -->|no| D[Stop]\n    C --> E[End]\n    D --> E' },
-  { cat:'flowchart', t:'Flowchart LR + subgraph', d:'Left-right with subgraphs & styling', code:'flowchart LR\n    subgraph Auth\n        A[Login] --> B[Token]\n    end\n    subgraph API\n        C[Request] --> D[Response]\n    end\n    B --> C\n    style A fill:#1e2d22,stroke:#4ade80\n    style D fill:#1e2d22,stroke:#22d3ee' },
-  { cat:'sequence', t:'Sequence diagram', d:'Participants, messages, alt blocks', code:'sequenceDiagram\n    participant U as User\n    participant S as Server\n    participant DB as Database\n    U->>S: POST /login\n    S->>DB: SELECT user\n    alt valid\n        DB-->>S: user found\n        S-->>U: 200 OK\n    else invalid\n        DB-->>S: not found\n        S-->>U: 401 Unauthorized\n    end' },
-  { cat:'class', t:'Class diagram', d:'Classes, inheritance, relationships', code:'classDiagram\n    class Animal {\n        +String name\n        +int age\n        +makeSound() void\n    }\n    class Dog {\n        +fetch() void\n    }\n    class Cat {\n        +purr() void\n    }\n    Animal <|-- Dog\n    Animal <|-- Cat\n    Animal : +eat() void' },
-  { cat:'state', t:'State diagram', d:'State machine with transitions', code:'stateDiagram-v2\n    [*] --> Idle\n    Idle --> Running : start\n    Running --> Paused : pause\n    Paused --> Running : resume\n    Running --> [*] : stop\n    Paused --> [*] : stop' },
-  { cat:'er', t:'ER diagram', d:'Entities and relationships', code:'erDiagram\n    CUSTOMER ||--o{ ORDER : places\n    ORDER ||--|{ LINE_ITEM : contains\n    CUSTOMER {\n        int id PK\n        string name\n    }\n    ORDER {\n        int id PK\n        int customer_id FK\n    }\n    LINE_ITEM {\n        int id PK\n        int order_id FK\n        string product\n    }' },
-  { cat:'gantt', t:'Gantt chart', d:'Project timeline with sections', code:'gantt\n    title Project Plan\n    dateFormat YYYY-MM-DD\n    section Design\n        Research      :a1, 2026-01-01, 7d\n        Prototype     :a2, after a1, 5d\n    section Build\n        Frontend      :b1, after a2, 10d\n        Backend       :b2, after a2, 12d\n    section Ship\n        Testing       :c1, after b1, 5d\n        Launch        :milestone, after c1, 0d' },
-  { cat:'pie', t:'Pie chart', d:'Simple pie with labels', code:'pie showData\n    title Browser Share\n    "Chrome" : 65\n    "Safari" : 18\n    "Firefox" : 9\n    "Edge" : 8' },
-  { cat:'journey', t:'User journey', d:'Task journey with scores', code:'journey\n    title My Day\n    section Morning\n        Wake up: 5: Me\n        Coffee: 4: Me\n    section Work\n        Code: 3: Me, Team\n        Meeting: 2: Team\n    section Evening\n        Gym: 4: Me\n        Sleep: 5: Me' },
-  { cat:'git', t:'Git graph', d:'Branches and merges', code:'gitGraph\n    commit id:"init"\n    branch feature\n    checkout feature\n    commit id:"feat-a"\n    commit id:"feat-b"\n    checkout main\n    commit id:"main-1"\n    merge feature\n    commit id:"release"' },
-  { cat:'c4', t:'C4 context', d:'C4 system context diagram', code:'C4Context\n    title System Context\n    Person(user, "User", "A person using the system")\n    System(sys, "My System", "Does useful things")\n    System_Ext(db, "Database", "Stores data")\n    Rel(user, sys, "Uses")\n    Rel(sys, db, "Reads/Writes")' },
-  { cat:'mindmap', t:'Mindmap', d:'Radial mind map', code:'mindmap\n    root((Project))\n        Design\n            UI\n            UX\n        Build\n            Frontend\n            Backend\n        Ship\n            Test\n            Deploy' },
-  { cat:'timeline', t:'Timeline', d:'Chronological timeline', code:'timeline\n    title History\n    2020 : Started\n    2021 : Built v1\n    2022 : Launched\n    2023 : 1M users\n    2024 : IPO' },
-  { cat:'quadrant', t:'Quadrant chart', d:'2x2 quadrant', code:'quadrantChart\n    title Priority Matrix\n    x-axis "Low Effort" --> "High Effort"\n    y-axis "Low Impact" --> "High Impact"\n    quadrant-1 "Quick Wins"\n    quadrant-2 "Big Bets"\n    quadrant-3 "Fill-ins"\n    quadrant-4 "Time Sinks"\n    "Fix bug": [0.2, 0.8]\n    "New feature": [0.8, 0.8]\n    "Docs": [0.3, 0.3]' },
-  { cat:'sankey', t:'Sankey', d:'Flow between nodes', code:'sankey-beta\n    A, B, 2\n    A, C, 3\n    B, D, 1\n    C, D, 2\n    D, E, 3' },
-  { cat:'xychart', t:'XY chart', d:'Line/bar chart', code:'xychart-beta\n    title "Sales by Quarter"\n    x-axis [Q1, Q2, Q3, Q4]\n    y-axis "Revenue" 0 --> 100\n    line [20, 45, 60, 85]\n    bar [15, 30, 50, 70]' },
-  { cat:'block', t:'Block diagram', d:'Block with ports', code:'block-beta\n    columns 3\n    A["Input"] B["Process"] C["Output"]\n    A --> B --> C\n    style A fill:#1e2d22,stroke:#4ade80\n    style C fill:#1e2d22,stroke:#22d3ee' },
-  { cat:'packet', t:'Packet diagram', d:'Network packet layout', code:'packet-beta\n    title TCP Header\n    0-15: "Source Port"\n    16-31: "Dest Port"\n    32-63: "Sequence"\n    64-95: "Ack"\n    96-99: "Data Offset"\n    100-102: "Reserved"\n    103: "NS"\n    104: "CWR"\n    105: "ECE"\n    106: "URG"\n    107: "ACK"\n    108: "PSH"\n    109: "RST"\n    110: "SYN"\n    111: "FIN"' },
-  { cat:'architecture', t:'Architecture', d:'Architecture diagram', code:'architecture-beta\n    group api(cloud)[API]\n    service db(database)[Database] in api\n    service disk1(disk)[Storage] in api\n    service server(server)[Server] in api\n    db:L -- R:server\n    disk1:T -- B:server' },
-];
-
-/* One starter template per diagram type — loaded by the "+ template" button. */
+/* ================= Templates ================= */
 var TEMPLATES = {
-  flowchart: 'flowchart TD\n    A[Start] --> B{Decision}\n    B -->|yes| C[Go]\n    B -->|no| D[Stop]\n    C --> E[End]\n    D --> E',
-  sequence: 'sequenceDiagram\n    participant U as User\n    participant S as Server\n    U->>S: POST /login\n    S-->>U: 200 OK\n    U->>S: GET /profile\n    S-->>U: profile data',
-  class: 'classDiagram\n    class Animal {\n        +String name\n        +int age\n        +makeSound() void\n    }\n    class Dog {\n        +fetch() void\n    }\n    Animal <|-- Dog',
-  state: 'stateDiagram-v2\n    [*] --> Idle\n    Idle --> Running : start\n    Running --> Paused : pause\n    Paused --> Running : resume\n    Running --> [*] : stop',
-  er: 'erDiagram\n    CUSTOMER ||--o{ ORDER : places\n    ORDER ||--|{ LINE_ITEM : contains\n    CUSTOMER {\n        int id PK\n        string name\n    }\n    ORDER {\n        int id PK\n        int customer_id FK\n    }',
-  gantt: 'gantt\n    title Project Plan\n    dateFormat YYYY-MM-DD\n    section Design\n        Research      :a1, 2026-01-01, 7d\n        Prototype     :a2, after a1, 5d\n    section Build\n        Frontend      :b1, after a2, 10d\n        Backend       :b2, after a2, 12d',
-  pie: 'pie showData\n    title Browser Share\n    "Chrome" : 65\n    "Safari" : 18\n    "Firefox" : 9\n    "Edge" : 8',
-  journey: 'journey\n    title My Day\n    section Morning\n        Wake up: 5: Me\n        Coffee: 4: Me\n    section Work\n        Code: 3: Me, Team\n        Meeting: 2: Team',
-  git: 'gitGraph\n    commit id:"init"\n    branch feature\n    checkout feature\n    commit id:"feat-a"\n    checkout main\n    commit id:"main-1"\n    merge feature',
-  c4: 'C4Context\n    title System Context\n    Person(user, "User", "A person using the system")\n    System(sys, "My System", "Does useful things")\n    System_Ext(db, "Database", "Stores data")\n    Rel(user, sys, "Uses")\n    Rel(sys, db, "Reads/Writes")',
-  mindmap: 'mindmap\n    root((Project))\n        Design\n            UI\n            UX\n        Build\n            Frontend\n            Backend\n        Ship\n            Test\n            Deploy',
-  timeline: 'timeline\n    title History\n    2020 : Started\n    2021 : Built v1\n    2022 : Launched\n    2023 : 1M users',
-  quadrant: 'quadrantChart\n    title Priority Matrix\n    x-axis "Low Effort" --> "High Effort"\n    y-axis "Low Impact" --> "High Impact"\n    quadrant-1 "Quick Wins"\n    quadrant-2 "Big Bets"\n    quadrant-3 "Fill-ins"\n    quadrant-4 "Time Sinks"\n    "Fix bug": [0.2, 0.8]\n    "New feature": [0.8, 0.8]',
-  sankey: 'sankey-beta\n    A, B, 2\n    A, C, 3\n    B, D, 1\n    C, D, 2\n    D, E, 3',
-  xychart: 'xychart-beta\n    title "Sales by Quarter"\n    x-axis [Q1, Q2, Q3, Q4]\n    y-axis "Revenue" 0 --> 100\n    line [20, 45, 60, 85]\n    bar [15, 30, 50, 70]',
-  block: 'block-beta\n    columns 3\n    A["Input"] B["Process"] C["Output"]\n    A --> B --> C\n    style A fill:#1e2d22,stroke:#4ade80\n    style C fill:#1e2d22,stroke:#22d3ee',
-  packet: 'packet-beta\n    title TCP Header\n    0-15: "Source Port"\n    16-31: "Dest Port"\n    32-63: "Sequence"\n    64-95: "Ack"\n    96-99: "Data Offset"\n    100-102: "Reserved"\n    103: "NS"\n    104: "CWR"\n    105: "ECE"\n    106: "URG"\n    107: "ACK"\n    108: "PSH"\n    109: "RST"\n    110: "SYN"\n    111: "FIN"',
-  architecture: 'architecture-beta\n    group api(cloud)[API]\n    service db(database)[Database] in api\n    service disk1(disk)[Storage] in api\n    service server(server)[Server] in api\n    db:L -- R:server\n    disk1:T -- B:server',
+  flowchart:'flowchart TD\n    A[Start] --> B{Decision}\n    B -->|yes| C[Go]\n    B -->|no| D[Stop]\n    C --> E[End]\n    D --> E',
+  sequence:'sequenceDiagram\n    participant U as User\n    participant S as Server\n    U->>S: POST /login\n    S-->>U: 200 OK\n    U->>S: GET /profile\n    S-->>U: profile data',
+  class:'classDiagram\n    class Animal {\n        +String name\n        +int age\n        +makeSound() void\n    }\n    class Dog {\n        +fetch() void\n    }\n    Animal <|-- Dog',
+  state:'stateDiagram-v2\n    [*] --> Idle\n    Idle --> Running : start\n    Running --> Paused : pause\n    Paused --> Running : resume\n    Running --> [*] : stop',
+  er:'erDiagram\n    CUSTOMER ||--o{ ORDER : places\n    ORDER ||--|{ LINE_ITEM : contains\n    CUSTOMER {\n        int id PK\n        string name\n    }\n    ORDER {\n        int id PK\n        int customer_id FK\n    }',
+  gantt:'gantt\n    title Project Plan\n    dateFormat YYYY-MM-DD\n    section Design\n        Research      :a1, 2026-01-01, 7d\n        Prototype     :a2, after a1, 5d\n    section Build\n        Frontend      :b1, after a2, 10d\n        Backend       :b2, after a2, 12d',
+  pie:'pie showData\n    title Browser Share\n    "Chrome" : 65\n    "Safari" : 18\n    "Firefox" : 9\n    "Edge" : 8',
+  journey:'journey\n    title My Day\n    section Morning\n        Wake up: 5: Me\n        Coffee: 4: Me\n    section Work\n        Code: 3: Me, Team\n        Meeting: 2: Team',
+  git:'gitGraph\n    commit id:"init"\n    branch feature\n    checkout feature\n    commit id:"feat-a"\n    checkout main\n    commit id:"main-1"\n    merge feature',
+  c4:'C4Context\n    title System Context\n    Person(user, "User", "A person using the system")\n    System(sys, "My System", "Does useful things")\n    System_Ext(db, "Database", "Stores data")\n    Rel(user, sys, "Uses")\n    Rel(sys, db, "Reads/Writes")',
+  mindmap:'mindmap\n    root((Project))\n        Design\n            UI\n            UX\n        Build\n            Frontend\n            Backend\n        Ship\n            Test\n            Deploy',
+  timeline:'timeline\n    title History\n    2020 : Started\n    2021 : Built v1\n    2022 : Launched\n    2023 : 1M users',
+  quadrant:'quadrantChart\n    title Priority Matrix\n    x-axis "Low Effort" --> "High Effort"\n    y-axis "Low Impact" --> "High Impact"\n    quadrant-1 "Quick Wins"\n    quadrant-2 "Big Bets"\n    quadrant-3 "Fill-ins"\n    quadrant-4 "Time Sinks"\n    "Fix bug": [0.2, 0.8]\n    "New feature": [0.8, 0.8]',
+  sankey:'sankey-beta\n    A, B, 2\n    A, C, 3\n    B, D, 1\n    C, D, 2\n    D, E, 3',
+  xychart:'xychart-beta\n    title "Sales by Quarter"\n    x-axis [Q1, Q2, Q3, Q4]\n    y-axis "Revenue" 0 --> 100\n    line [20, 45, 60, 85]\n    bar [15, 30, 50, 70]',
+  block:'block-beta\n    columns 3\n    A["Input"] B["Process"] C["Output"]\n    A --> B --> C\n    style A fill:#1e2d22,stroke:#4ade80\n    style C fill:#1e2d22,stroke:#22d3ee',
+  packet:'packet-beta\n    title TCP Header\n    0-15: "Source Port"\n    16-31: "Dest Port"\n    32-63: "Sequence"\n    64-95: "Ack"\n    96-99: "Data Offset"\n    100-102: "Reserved"\n    103: "NS"\n    104: "CWR"\n    105: "ECE"\n    106: "URG"\n    107: "ACK"\n    108: "PSH"\n    109: "RST"\n    110: "SYN"\n    111: "FIN"',
+  architecture:'architecture-beta\n    group api(cloud)[API]\n    service db(database)[Database] in api\n    service disk1(disk)[Storage] in api\n    service server(server)[Server] in api\n    db:L -- R:server\n    disk1:T -- B:server',
 };
+function loadTemplate(){ var type=$('diagramType').value; var tpl=TEMPLATES[type]; if(!tpl){ toast('no template for '+type,true); return; } editor.value=tpl; state.diagramType=type; state.dirty=true; refreshEditor(); render(true); toast('loaded '+type+' template'); }
 
-function loadTemplate(){
-  var type = $('diagramType').value;
-  var tpl = TEMPLATES[type];
-  if (!tpl){ toast('no template for ' + type, true); return; }
-  editor.value = tpl;
-  state.diagramType = type;
-  state.dirty = true;
-  refreshEditor();
-  render(true);
-  toast('loaded ' + type + ' template');
-}
-
-/* ================= Context-aware palette =================
-   Each diagram type has a set of insertable items grouped by category.
-   An item inserts a snippet at the cursor. `ph` = placeholder text the
-   user replaces; `sel` = char offset into the inserted text to select. */
+/* ================= Palette ================= */
 var PALETTE = {
-  flowchart: [
-    { cat: 'Nodes', items: [
-      { lbl: 'Process', ico: '▭', code: 'A[Process]', ph: 'A' },
-      { lbl: 'Decision', ico: '◇', code: 'B{Decision}', ph: 'B' },
-      { lbl: 'Start/End', ico: '◯', code: 'C((Start))', ph: 'C' },
-      { lbl: 'Input/Output', ico: '▱', code: 'D[/Input/]', ph: 'D' },
-      { lbl: 'Subroutine', ico: '▢', code: 'E[[Subroutine]]', ph: 'E' },
-      { lbl: 'Database', ico: '▤', code: 'F[(Database)]', ph: 'F' },
-      { lbl: 'Hexagon', ico: '⬡', code: 'G{{Hexagon}}', ph: 'G' },
-      { lbl: 'Cloud', ico: '☁', code: 'H(Cloud)', ph: 'H' },
-    ]},
-    { cat: 'Edges', items: [
-      { lbl: 'Arrow', ico: '→', code: 'A --> B', ph: 'A' },
-      { lbl: 'Labeled', ico: '⇢', code: 'A -->|label| B', ph: 'A' },
-      { lbl: 'Dotted', ico: '⋯', code: 'A -.-> B', ph: 'A' },
-      { lbl: 'Thick', ico: '⇒', code: 'A ==> B', ph: 'A' },
-      { lbl: 'Both ways', ico: '↔', code: 'A <--> B', ph: 'A' },
-      { lbl: 'Invisible', ico: '·', code: 'A ~~~ B', ph: 'A' },
-    ]},
-    { cat: 'Structure', items: [
-      { lbl: 'Subgraph', ico: '▣', code: 'subgraph SG[Group]\n    A\nend', ph: 'SG' },
-      { lbl: 'Style node', ico: '🎨', code: 'style A fill:#1e2d22,stroke:#4ade80', ph: 'A' },
-      { lbl: 'Class def', ico: '🏷', code: 'classDef myClass fill:#1e2d22,stroke:#22d3ee\nclass A myClass', ph: 'myClass' },
-      { lbl: 'Link style', ico: '🖍', code: 'linkStyle 0 stroke:#4ade80,stroke-width:2px', ph: '0' },
-    ]},
+  flowchart:[
+    {cat:'Nodes',items:[{lbl:'Process',code:'A[Process]',ph:'A'},{lbl:'Decision',code:'B{Decision}',ph:'B'},{lbl:'Start/End',code:'C((Start))',ph:'C'},{lbl:'Input/Output',code:'D[/Input/]',ph:'D'},{lbl:'Subroutine',code:'E[[Subroutine]]',ph:'E'},{lbl:'Database',code:'F[(Database)]',ph:'F'},{lbl:'Hexagon',code:'G{{Hexagon}}',ph:'G'},{lbl:'Cloud',code:'H(Cloud)',ph:'H'}]},
+    {cat:'Edges',items:[{lbl:'Arrow',code:'A --> B',ph:'A'},{lbl:'Labeled',code:'A -->|label| B',ph:'A'},{lbl:'Dotted',code:'A -.-> B',ph:'A'},{lbl:'Thick',code:'A ==> B',ph:'A'},{lbl:'Both ways',code:'A <--> B',ph:'A'},{lbl:'Invisible',code:'A ~~~ B',ph:'A'}]},
+    {cat:'Structure',items:[{lbl:'Subgraph',code:'subgraph SG[Group]\n    A\nend',ph:'SG'},{lbl:'Style node',code:'style A fill:#1e2d22,stroke:#4ade80',ph:'A'},{lbl:'Class def',code:'classDef myClass fill:#1e2d22,stroke:#22d3ee\nclass A myClass',ph:'myClass'},{lbl:'Link style',code:'linkStyle 0 stroke:#4ade80,stroke-width:2px',ph:'0'}]}
   ],
-  sequence: [
-    { cat: 'Participants', items: [
-      { lbl: 'Actor', ico: '👤', code: 'actor A as Alice', ph: 'A' },
-      { lbl: 'Participant', ico: '▭', code: 'participant P as Name', ph: 'P' },
-      { lbl: 'Database', ico: '▤', code: 'participant DB as Database', ph: 'DB' },
-      { lbl: 'Box group', ico: '▣', code: 'box Group\n    participant A\nend', ph: 'Group' },
-    ]},
-    { cat: 'Messages', items: [
-      { lbl: 'Solid arrow', ico: '→', code: 'A->>B: message', ph: 'A' },
-      { lbl: 'Dotted arrow', ico: '⋯', code: 'A-->>B: message', ph: 'A' },
-      { lbl: 'Solid line', ico: '—', code: 'A->B: message', ph: 'A' },
-      { lbl: 'Dotted line', ico: '┄', code: 'A-->B: message', ph: 'A' },
-      { lbl: 'Async', ico: '⇢', code: 'A-)B: message', ph: 'A' },
-      { lbl: 'Reply', ico: '↩', code: 'A--xB: message', ph: 'A' },
-    ]},
-    { cat: 'Structure', items: [
-      { lbl: 'Alt block', ico: '◈', code: 'alt condition\n    A->>B: yes\nelse\n    A->>B: no\nend', ph: 'condition' },
-      { lbl: 'Loop', ico: '↻', code: 'loop each item\n    A->>B: process\nend', ph: 'each item' },
-      { lbl: 'Opt', ico: '◌', code: 'opt optional\n    A->>B: maybe\nend', ph: 'optional' },
-      { lbl: 'Note', ico: '📝', code: 'Note over A,B: note text', ph: 'A' },
-      { lbl: 'Activate', ico: '▮', code: 'activate A\nA-->>B: done\ndeactivate A', ph: 'A' },
-      { lbl: 'Parallel', ico: '∥', code: 'par Parallel\n    A->>B: one\nand\n    A->>C: two\nend', ph: 'Parallel' },
-    ]},
+  sequence:[
+    {cat:'Participants',items:[{lbl:'Actor',code:'actor A as Alice',ph:'A'},{lbl:'Participant',code:'participant P as Name',ph:'P'},{lbl:'Database',code:'participant DB as Database',ph:'DB'},{lbl:'Box group',code:'box Group\n    participant A\nend',ph:'Group'}]},
+    {cat:'Messages',items:[{lbl:'Solid arrow',code:'A->>B: message',ph:'A'},{lbl:'Dotted arrow',code:'A-->>B: message',ph:'A'},{lbl:'Solid line',code:'A->B: message',ph:'A'},{lbl:'Dotted line',code:'A-->B: message',ph:'A'},{lbl:'Async',code:'A-)B: message',ph:'A'},{lbl:'Reply',code:'A--xB: message',ph:'A'}]},
+    {cat:'Structure',items:[{lbl:'Alt block',code:'alt condition\n    A->>B: yes\nelse\n    A->>B: no\nend',ph:'condition'},{lbl:'Loop',code:'loop each item\n    A->>B: process\nend',ph:'each item'},{lbl:'Opt',code:'opt optional\n    A->>B: maybe\nend',ph:'optional'},{lbl:'Note',code:'Note over A,B: note text',ph:'A'},{lbl:'Activate',code:'activate A\nA-->>B: done\ndeactivate A',ph:'A'}]}
   ],
-  class: [
-    { cat: 'Members', items: [
-      { lbl: 'Class', ico: '▭', code: 'class Name {\n}', ph: 'Name' },
-      { lbl: 'Field', ico: '▪', code: '+String name', ph: 'name' },
-      { lbl: 'Method', ico: 'ƒ', code: '+method() void', ph: 'method' },
-      { lbl: 'Private', ico: '−', code: '-secret() void', ph: 'secret' },
-      { lbl: 'Protected', ico: '#', code: '#guarded() void', ph: 'guarded' },
-    ]},
-    { cat: 'Relations', items: [
-      { lbl: 'Inheritance', ico: '▷', code: 'A <|-- B', ph: 'A' },
-      { lbl: 'Composition', ico: '◆', code: 'A *-- B', ph: 'A' },
-      { lbl: 'Aggregation', ico: '◇', code: 'A o-- B', ph: 'A' },
-      { lbl: 'Association', ico: '—', code: 'A --> B', ph: 'A' },
-      { lbl: 'Dependency', ico: '⋯', code: 'A ..> B', ph: 'A' },
-      { lbl: 'Realization', ico: '▷', code: 'A <|.. B', ph: 'A' },
-    ]},
-    { cat: 'Structure', items: [
-      { lbl: 'Namespace', ico: '▣', code: 'namespace Name {\n    class A\n}', ph: 'Name' },
-      { lbl: 'Annotation', ico: '🏷', code: 'class A {\n    <<interface>>\n}', ph: 'A' },
-      { lbl: 'Generic', ico: '⟨⟩', code: 'class A~T~', ph: 'A' },
-    ]},
+  class:[
+    {cat:'Members',items:[{lbl:'Class',code:'class Name {\n}',ph:'Name'},{lbl:'Field',code:'+String name',ph:'name'},{lbl:'Method',code:'+method() void',ph:'method'}]},
+    {cat:'Relations',items:[{lbl:'Inheritance',code:'A <|-- B',ph:'A'},{lbl:'Composition',code:'A *-- B',ph:'A'},{lbl:'Aggregation',code:'A o-- B',ph:'A'},{lbl:'Association',code:'A --> B',ph:'A'},{lbl:'Dependency',code:'A ..> B',ph:'A'}]}
   ],
-  state: [
-    { cat: 'States', items: [
-      { lbl: 'State', ico: '▭', code: 'State1', ph: 'State1' },
-      { lbl: 'Composite', ico: '▣', code: 'state Composite {\n    A\n    B\n}', ph: 'Composite' },
-      { lbl: 'Fork', ico: '⊢', code: 'state fork <<fork>>', ph: 'fork' },
-      { lbl: 'Choice', ico: '◇', code: 'state choice <<choice>>', ph: 'choice' },
-      { lbl: 'Join', ico: '⊣', code: 'state join <<join>>', ph: 'join' },
-    ]},
-    { cat: 'Transitions', items: [
-      { lbl: 'Transition', ico: '→', code: 'A --> B', ph: 'A' },
-      { lbl: 'Labeled', ico: '⇢', code: 'A --> B : event', ph: 'A' },
-      { lbl: 'Start', ico: '●', code: '[*] --> A', ph: 'A' },
-      { lbl: 'End', ico: '◉', code: 'A --> [*]', ph: 'A' },
-      { lbl: 'Self', ico: '↻', code: 'A --> A : again', ph: 'A' },
-    ]},
+  state:[
+    {cat:'States',items:[{lbl:'State',code:'State1',ph:'State1'},{lbl:'Composite',code:'state Composite {\n    A\n    B\n}',ph:'Composite'},{lbl:'Fork',code:'state fork <<fork>>',ph:'fork'},{lbl:'Choice',code:'state choice <<choice>>',ph:'choice'}]},
+    {cat:'Transitions',items:[{lbl:'Transition',code:'A --> B',ph:'A'},{lbl:'Labeled',code:'A --> B : event',ph:'A'},{lbl:'Start',code:'[*] --> A',ph:'A'},{lbl:'End',code:'A --> [*]',ph:'A'},{lbl:'Self',code:'A --> A : again',ph:'A'}]}
   ],
-  er: [
-    { cat: 'Entities', items: [
-      { lbl: 'Entity', ico: '▭', code: 'ENTITY {\n    int id PK\n    string name\n}', ph: 'ENTITY' },
-      { lbl: 'Attribute', ico: '▪', code: 'string field', ph: 'field' },
-      { lbl: 'PK', ico: '🔑', code: 'int id PK', ph: 'id' },
-      { lbl: 'FK', ico: '🔗', code: 'int ref_id FK', ph: 'ref_id' },
-      { lbl: 'Unique', ico: '⛃', code: 'string email UK', ph: 'email' },
-    ]},
-    { cat: 'Relations', items: [
-      { lbl: 'One-to-many', ico: '1∞', code: 'A ||--o{ B : has', ph: 'A' },
-      { lbl: 'One-to-one', ico: '1:1', code: 'A ||--|| B : owns', ph: 'A' },
-      { lbl: 'Many-to-many', ico: '∞∞', code: 'A }o--o{ B : links', ph: 'A' },
-      { lbl: 'Zero-or-more', ico: '0∞', code: 'A o--o{ B : refs', ph: 'A' },
-    ]},
+  er:[
+    {cat:'Entities',items:[{lbl:'Entity',code:'ENTITY {\n    int id PK\n    string name\n}',ph:'ENTITY'},{lbl:'Attribute',code:'string field',ph:'field'},{lbl:'PK',code:'int id PK',ph:'id'},{lbl:'FK',code:'int ref_id FK',ph:'ref_id'},{lbl:'Unique',code:'string email UK',ph:'email'}]},
+    {cat:'Relations',items:[{lbl:'One-to-many',code:'A ||--o{ B : has',ph:'A'},{lbl:'One-to-one',code:'A ||--|| B : owns',ph:'A'},{lbl:'Many-to-many',code:'A }o--o{ B : links',ph:'A'},{lbl:'Zero-or-more',code:'A o--o{ B : refs',ph:'A'}]}
   ],
-  gantt: [
-    { cat: 'Tasks', items: [
-      { lbl: 'Task', ico: '▭', code: 'Task name :t1, 2026-01-01, 5d', ph: 'Task name' },
-      { lbl: 'Milestone', ico: '◆', code: 'Milestone :milestone, 2026-01-10, 0d', ph: 'Milestone' },
-      { lbl: 'After task', ico: '⇢', code: 'Task :t2, after t1, 3d', ph: 'Task' },
-      { lbl: 'Section', ico: '▣', code: 'section Section Name', ph: 'Section Name' },
-      { lbl: 'Active', ico: '▮', code: 'Task :active, 2026-01-01, 5d', ph: 'Task' },
-      { lbl: 'Done', ico: '✓', code: 'Task :done, 2026-01-01, 5d', ph: 'Task' },
-    ]},
+  gantt:[{cat:'Tasks',items:[{lbl:'Task',code:'Task name :t1, 2026-01-01, 5d',ph:'Task name'},{lbl:'Milestone',code:'Milestone :milestone, 2026-01-10, 0d',ph:'Milestone'},{lbl:'After task',code:'Task :t2, after t1, 3d',ph:'Task'},{lbl:'Section',code:'section Section Name',ph:'Section Name'},{lbl:'Active',code:'Task :active, 2026-01-01, 5d',ph:'Task'},{lbl:'Done',code:'Task :done, 2026-01-01, 5d',ph:'Task'}]}],
+  pie:[{cat:'Data',items:[{lbl:'Slice',code:'"Label" : 25',ph:'Label'},{lbl:'Title',code:'title Chart Title',ph:'Chart Title'}]}],
+  journey:[{cat:'Tasks',items:[{lbl:'Task',code:'Task: 3: Me',ph:'Task'},{lbl:'Section',code:'section Section Name',ph:'Section Name'},{lbl:'Multi-actor',code:'Task: 4: Me, Team',ph:'Task'}]}],
+  git:[{cat:'Commits',items:[{lbl:'Commit',code:'commit id:"c1"',ph:'c1'},{lbl:'Branch',code:'branch feature',ph:'feature'},{lbl:'Checkout',code:'checkout feature',ph:'feature'},{lbl:'Merge',code:'merge feature',ph:'feature'},{lbl:'Tag',code:'commit id:"v1" tag:"v1.0"',ph:'v1'},{lbl:'Cherry-pick',code:'cherry-pick id:"c1"',ph:'c1'}]}],
+  c4:[
+    {cat:'Elements',items:[{lbl:'Person',code:'Person(p, "Name", "desc")',ph:'p'},{lbl:'System',code:'System(s, "Name", "desc")',ph:'s'},{lbl:'Container',code:'Container(c, "Name", "tech", "desc")',ph:'c'},{lbl:'Component',code:'Component(co, "Name", "tech", "desc")',ph:'co'},{lbl:'External',code:'System_Ext(e, "Name", "desc")',ph:'e'},{lbl:'DB',code:'ContainerDb(db, "Name", "desc")',ph:'db'}]},
+    {cat:'Relations',items:[{lbl:'Rel',code:'Rel(a, b, "uses")',ph:'a'},{lbl:'Rel back',code:'Rel_Back(a, b, "uses")',ph:'a'},{lbl:'BiRel',code:'BiRel(a, b, "talks")',ph:'a'},{lbl:'Rel tech',code:'Rel(a, b, "uses", "HTTP")',ph:'a'}]}
   ],
-  pie: [
-    { cat: 'Data', items: [
-      { lbl: 'Slice', ico: '◔', code: '"Label" : 25', ph: 'Label' },
-      { lbl: 'Title', ico: 'T', code: 'title Chart Title', ph: 'Chart Title' },
-    ]},
-  ],
-  journey: [
-    { cat: 'Tasks', items: [
-      { lbl: 'Task', ico: '▭', code: 'Task: 3: Me', ph: 'Task' },
-      { lbl: 'Section', ico: '▣', code: 'section Section Name', ph: 'Section Name' },
-      { lbl: 'Multi-actor', ico: '👥', code: 'Task: 4: Me, Team', ph: 'Task' },
-    ]},
-  ],
-  git: [
-    { cat: 'Commits', items: [
-      { lbl: 'Commit', ico: '●', code: 'commit id:"c1"', ph: 'c1' },
-      { lbl: 'Branch', ico: '⎇', code: 'branch feature', ph: 'feature' },
-      { lbl: 'Checkout', ico: '⇄', code: 'checkout feature', ph: 'feature' },
-      { lbl: 'Merge', ico: '⧉', code: 'merge feature', ph: 'feature' },
-      { lbl: 'Tag', ico: '🏷', code: 'commit id:"v1" tag:"v1.0"', ph: 'v1' },
-      { lbl: 'Cherry-pick', ico: '🍒', code: 'cherry-pick id:"c1"', ph: 'c1' },
-    ]},
-  ],
-  c4: [
-    { cat: 'Elements', items: [
-      { lbl: 'Person', ico: '👤', code: 'Person(p, "Name", "desc")', ph: 'p' },
-      { lbl: 'System', ico: '▭', code: 'System(s, "Name", "desc")', ph: 's' },
-      { lbl: 'Container', ico: '▣', code: 'Container(c, "Name", "tech", "desc")', ph: 'c' },
-      { lbl: 'Component', ico: '▢', code: 'Component(co, "Name", "tech", "desc")', ph: 'co' },
-      { lbl: 'External', ico: '☁', code: 'System_Ext(e, "Name", "desc")', ph: 'e' },
-      { lbl: 'DB', ico: '▤', code: 'ContainerDb(db, "Name", "desc")', ph: 'db' },
-    ]},
-    { cat: 'Relations', items: [
-      { lbl: 'Rel', ico: '→', code: 'Rel(a, b, "uses")', ph: 'a' },
-      { lbl: 'Rel back', ico: '←', code: 'Rel_Back(a, b, "uses")', ph: 'a' },
-      { lbl: 'BiRel', ico: '↔', code: 'BiRel(a, b, "talks")', ph: 'a' },
-      { lbl: 'Rel tech', ico: '⇢', code: 'Rel(a, b, "uses", "HTTP")', ph: 'a' },
-    ]},
-  ],
-  mindmap: [
-    { cat: 'Nodes', items: [
-      { lbl: 'Node', ico: '▪', code: 'Child', ph: 'Child' },
-      { lbl: 'Root', ico: '◯', code: 'root((Root))', ph: 'Root' },
-      { lbl: 'Square', ico: '▭', code: 'Node[Square]', ph: 'Node' },
-      { lbl: 'Cloud', ico: '☁', code: 'Node)Cloud(', ph: 'Node' },
-      { lbl: 'Hexagon', ico: '⬡', code: 'Node{{Hex}}', ph: 'Node' },
-    ]},
-  ],
-  timeline: [
-    { cat: 'Events', items: [
-      { lbl: 'Event', ico: '●', code: '2026 : Event', ph: '2026' },
-      { lbl: 'Title', ico: 'T', code: 'title Timeline', ph: 'Timeline' },
-      { lbl: 'Section', ico: '▣', code: 'section Section', ph: 'Section' },
-      { lbl: 'Multi-event', ico: '◉', code: '2026 : A : B : C', ph: '2026' },
-    ]},
-  ],
-  quadrant: [
-    { cat: 'Points', items: [
-      { lbl: 'Point', ico: '●', code: '"Item": [0.5, 0.5]', ph: 'Item' },
-      { lbl: 'Quadrant', ico: '▣', code: 'quadrant-1 "Label"', ph: 'Label' },
-      { lbl: 'Axis', ico: '⇄', code: 'x-axis "Low" --> "High"', ph: 'Low' },
-    ]},
-  ],
-  sankey: [
-    { cat: 'Links', items: [
-      { lbl: 'Link', ico: '→', code: 'A, B, 5', ph: 'A' },
-      { lbl: 'Title', ico: 'T', code: 'title Flow', ph: 'Flow' },
-    ]},
-  ],
-  xychart: [
-    { cat: 'Series', items: [
-      { lbl: 'Line', ico: '∿', code: 'line [10, 20, 30]', ph: '10' },
-      { lbl: 'Bar', ico: '▮', code: 'bar [10, 20, 30]', ph: '10' },
-      { lbl: 'X-axis', ico: '⇄', code: 'x-axis [A, B, C]', ph: 'A' },
-      { lbl: 'Y-axis', ico: '⇅', code: 'y-axis "Value" 0 --> 100', ph: 'Value' },
-      { lbl: 'Title', ico: 'T', code: 'title "Chart"', ph: 'Chart' },
-    ]},
-  ],
-  block: [
-    { cat: 'Blocks', items: [
-      { lbl: 'Block', ico: '▭', code: 'A["Label"]', ph: 'A' },
-      { lbl: 'Columns', ico: '▦', code: 'columns 3', ph: '3' },
-      { lbl: 'Edge', ico: '→', code: 'A --> B', ph: 'A' },
-      { lbl: 'Style', ico: '🎨', code: 'style A fill:#1e2d22,stroke:#4ade80', ph: 'A' },
-    ]},
-  ],
-  packet: [
-    { cat: 'Fields', items: [
-      { lbl: 'Field', ico: '▭', code: '0-7: "Field"', ph: '0-7' },
-      { lbl: 'Title', ico: 'T', code: 'title Packet', ph: 'Packet' },
-    ]},
-  ],
-  architecture: [
-    { cat: 'Elements', items: [
-      { lbl: 'Service', ico: '▭', code: 'service s(server)[Name]', ph: 's' },
-      { lbl: 'Group', ico: '▣', code: 'group g(cloud)[Name]', ph: 'g' },
-      { lbl: 'In group', ico: '▢', code: 'service s(server)[Name] in g', ph: 's' },
-      { lbl: 'Junction', ico: '◉', code: 'junction j', ph: 'j' },
-    ]},
-    { cat: 'Edges', items: [
-      { lbl: 'Edge', ico: '→', code: 'a:R --> L:b', ph: 'a' },
-      { lbl: 'Undirected', ico: '—', code: 'a:R -- L:b', ph: 'a' },
-      { lbl: 'Group edge', ico: '⇢', code: 'a{g}:B --> T:b{g}', ph: 'a' },
-    ]},
+  mindmap:[{cat:'Nodes',items:[{lbl:'Node',code:'Child',ph:'Child'},{lbl:'Root',code:'root((Root))',ph:'Root'},{lbl:'Square',code:'Node[Square]',ph:'Node'},{lbl:'Cloud',code:'Node)Cloud(',ph:'Node'},{lbl:'Hexagon',code:'Node{{Hex}}',ph:'Node'}]}],
+  timeline:[{cat:'Events',items:[{lbl:'Event',code:'2026 : Event',ph:'2026'},{lbl:'Title',code:'title Timeline',ph:'Timeline'},{lbl:'Section',code:'section Section',ph:'Section'},{lbl:'Multi-event',code:'2026 : A : B : C',ph:'2026'}]}],
+  quadrant:[{cat:'Points',items:[{lbl:'Point',code:'"Item": [0.5, 0.5]',ph:'Item'},{lbl:'Quadrant',code:'quadrant-1 "Label"',ph:'Label'},{lbl:'Axis',code:'x-axis "Low" --> "High"',ph:'Low'}]}],
+  sankey:[{cat:'Links',items:[{lbl:'Link',code:'A, B, 5',ph:'A'},{lbl:'Title',code:'title Flow',ph:'Flow'}]}],
+  xychart:[{cat:'Series',items:[{lbl:'Line',code:'line [10, 20, 30]',ph:'10'},{lbl:'Bar',code:'bar [10, 20, 30]',ph:'10'},{lbl:'X-axis',code:'x-axis [A, B, C]',ph:'A'},{lbl:'Y-axis',code:'y-axis "Value" 0 --> 100',ph:'Value'},{lbl:'Title',code:'title "Chart"',ph:'Chart'}]}],
+  block:[{cat:'Blocks',items:[{lbl:'Block',code:'A["Label"]',ph:'A'},{lbl:'Columns',code:'columns 3',ph:'3'},{lbl:'Edge',code:'A --> B',ph:'A'},{lbl:'Style',code:'style A fill:#1e2d22,stroke:#4ade80',ph:'A'}]}],
+  packet:[{cat:'Fields',items:[{lbl:'Field',code:'0-7: "Field"',ph:'0-7'},{lbl:'Title',code:'title Packet',ph:'Packet'}]}],
+  architecture:[
+    {cat:'Elements',items:[{lbl:'Service',code:'service s(server)[Name]',ph:'s'},{lbl:'Group',code:'group g(cloud)[Name]',ph:'g'},{lbl:'In group',code:'service s(server)[Name] in g',ph:'s'},{lbl:'Junction',code:'junction j',ph:'j'}]},
+    {cat:'Edges',items:[{lbl:'Edge',code:'a:R --> L:b',ph:'a'},{lbl:'Undirected',code:'a:R -- L:b',ph:'a'},{lbl:'Group edge',code:'a{g}:B --> T:b{g}',ph:'a'}]}
   ],
 };
-
 function buildPalette(){
-  var body = $('paletteBody');
-  var type = $('diagramType').value;
-  $('paletteType').textContent = type;
-  var groups = PALETTE[type];
-  body.innerHTML = '';
-  if (!groups || !groups.length){
-    body.innerHTML = '<div class="pal-empty">No insertable items for this diagram type.</div>';
-    return;
-  }
+  var body=$('paletteBody'), type=$('diagramType').value;
+  $('paletteType').textContent=type; body.innerHTML='';
+  var groups=PALETTE[type];
+  if(!groups||!groups.length){ body.innerHTML='<div class="p-5 text-center text-[11px] leading-relaxed text-faint">No insertable items for this type.</div>'; return; }
   groups.forEach(function(g){
-    var cat = document.createElement('div');
-    cat.className = 'pal-cat';
-    cat.textContent = g.cat;
-    body.appendChild(cat);
+    var cat=document.createElement('div'); cat.className='pal-cat'; cat.textContent=g.cat; body.appendChild(cat);
     g.items.forEach(function(it){
-      var el = document.createElement('button');
-      el.className = 'pal-item';
-      el.innerHTML = '<span class="ico">' + it.ico + '</span><span class="lbl">' + it.lbl + '</span>';
-      el.title = it.code;
-      el.onclick = function(){ insertPaletteItem(it); };
-      body.appendChild(el);
+      var el=document.createElement('button');
+      el.className='pal-item'; el.title=it.code; el.textContent=it.lbl;
+      el.onclick=function(){ insertPaletteItem(it); }; body.appendChild(el);
     });
   });
 }
-
 function insertPaletteItem(it){
-  var code = it.code;
-  var ph = it.ph || '';
-  var pos = editor.selectionStart;
-  var before = editor.value.substring(0, pos);
-  var after = editor.value.substring(pos);
-  // If the cursor is before the diagram declaration line (e.g. at the very
-  // start), append to the end of the body instead of breaking the header.
-  var firstLine = editor.value.split('\n')[0];
-  var isHeader = /^(flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie|journey|gitGraph|C4|mindmap|timeline|quadrantChart|sankey|sankey-beta|xychart|block-beta|packet-beta|architecture-beta)/.test(firstLine.trim());
-  if (isHeader && pos <= firstLine.length){
-    // append at end
-    var end = editor.value.length;
-    var prefix = (end && editor.value.charAt(end-1) !== '\n') ? '\n' : '';
-    var insert = prefix + code + '\n';
-    editor.value = editor.value.substring(0, end) + insert;
-    var start = end + prefix.length;
-    editor.focus();
-    editor.setSelectionRange(start, start + ph.length);
-    state.dirty = true;
-    refreshEditor();
-    scheduleRender();
-    toast('inserted ' + it.lbl);
-    return;
+  var code=it.code, ph=it.ph||'', pos=editor.selectionStart;
+  var before=editor.value.substring(0,pos), after=editor.value.substring(pos);
+  var firstLine=editor.value.split('\n')[0];
+  var isHeader=/^(flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie|journey|gitGraph|C4|mindmap|timeline|quadrantChart|sankey|sankey-beta|xychart|block-beta|packet-beta|architecture-beta)/.test(firstLine.trim());
+  if(isHeader&&pos<=firstLine.length){
+    var end=editor.value.length, prefix=(end&&editor.value.charAt(end-1)!=='\n')?'\n':'';
+    var insert=prefix+code+'\n'; editor.value=editor.value.substring(0,end)+insert;
+    var start=end+prefix.length; editor.focus(); editor.setSelectionRange(start,start+ph.length);
+    state.dirty=true; refreshEditor(); scheduleRender(); toast('inserted '+it.lbl); return;
   }
-  // Ensure the inserted line starts on its own line
-  var prefix = (before.length && before.charAt(before.length-1) !== '\n') ? '\n' : '';
-  var suffix = (after.length && after.charAt(0) !== '\n') ? '\n' : '';
-  var insert = prefix + code + suffix;
-  editor.value = before + insert + after;
-  // Select the placeholder so the user can type over it
-  var start = pos + prefix.length;
-  var end = start + ph.length;
-  editor.focus();
-  editor.setSelectionRange(start, end);
-  state.dirty = true;
-  refreshEditor();
-  scheduleRender();
-  toast('inserted ' + it.lbl);
+  var prefix2=(before.length&&before.charAt(before.length-1)!=='\n')?'\n':'';
+  var suffix=(after.length&&after.charAt(0)!=='\n')?'\n':'';
+  var insert2=prefix2+code+suffix; editor.value=before+insert2+after;
+  var start2=pos+prefix2.length; editor.focus(); editor.setSelectionRange(start2,start2+ph.length);
+  state.dirty=true; refreshEditor(); scheduleRender(); toast('inserted '+it.lbl);
 }
 
+/* ================= Snippets ================= */
+var SNIPPETS=[
+  {cat:'flowchart',t:'Flowchart TD',code:'flowchart TD\n    A[Start] --> B{Decision}\n    B -->|yes| C[Go]\n    B -->|no| D[Stop]\n    C --> E[End]\n    D --> E'},
+  {cat:'sequence',t:'Sequence',code:'sequenceDiagram\n    participant U as User\n    participant S as Server\n    U->>S: POST /login\n    alt valid\n        S-->>U: 200 OK\n    else invalid\n        S-->>U: 401\n    end'},
+  {cat:'class',t:'Class',code:'classDiagram\n    class Animal {\n        +String name\n        +makeSound() void\n    }\n    class Dog {\n        +fetch() void\n    }\n    Animal <|-- Dog'},
+  {cat:'state',t:'State',code:'stateDiagram-v2\n    [*] --> Idle\n    Idle --> Running : start\n    Running --> Paused : pause\n    Paused --> Running : resume\n    Running --> [*] : stop'},
+  {cat:'er',t:'ER',code:'erDiagram\n    CUSTOMER ||--o{ ORDER : places\n    ORDER ||--|{ LINE_ITEM : contains'},
+  {cat:'gantt',t:'Gantt',code:'gantt\n    title Project Plan\n    dateFormat YYYY-MM-DD\n    section Design\n        Research :a1, 2026-01-01, 7d'},
+  {cat:'pie',t:'Pie',code:'pie showData\n    "Chrome" : 65\n    "Safari" : 18'},
+  {cat:'journey',t:'Journey',code:'journey\n    title My Day\n    section Morning\n        Coffee: 5: Me'},
+  {cat:'git',t:'Git graph',code:'gitGraph\n    commit id:"init"\n    branch feature\n    commit id:"feat-a"\n    checkout main\n    merge feature'},
+  {cat:'c4',t:'C4 context',code:'C4Context\n    Person(user, "User")\n    System(sys, "My System")\n    Rel(user, sys, "Uses")'},
+  {cat:'mindmap',t:'Mindmap',code:'mindmap\n    root((Project))\n        Design\n            UI\n        Build\n            Frontend'},
+  {cat:'timeline',t:'Timeline',code:'timeline\n    title History\n    2020 : Started\n    2021 : Built v1'},
+  {cat:'quadrant',t:'Quadrant',code:'quadrantChart\n    title Matrix\n    x-axis "Low" --> "High"\n    y-axis "Low" --> "High"\n    "A": [0.2, 0.8]'},
+  {cat:'sankey',t:'Sankey',code:'sankey-beta\n    A, B, 2\n    A, C, 3\n    B, D, 1'},
+  {cat:'xychart',t:'XY chart',code:'xychart-beta\n    x-axis [Q1, Q2]\n    y-axis "Rev" 0 --> 100\n    line [20, 45]'},
+  {cat:'block',t:'Block',code:'block-beta\n    columns 3\n    A["In"] B["Proc"] C["Out"]\n    A --> B --> C'},
+  {cat:'packet',t:'Packet',code:'packet-beta\n    title TCP\n    0-15: "Source Port"\n    16-31: "Dest Port"'},
+  {cat:'architecture',t:'Architecture',code:'architecture-beta\n    service db(database)[DB]\n    service web(server)[Web]\n    web:R --> L:db'},
+];
 function buildSnippets(){
-  var body = $('snippetsBody');
-  body.innerHTML = '';
+  var body=$('snippetsBody'); body.innerHTML='';
   SNIPPETS.forEach(function(s){
-    var el = document.createElement('div');
-    el.className = 'snip';
-    el.innerHTML = '<div class="t">' + s.t + '</div><div class="d">' + s.d + '</div><span class="cat">' + s.cat + '</span>';
-    el.onclick = function(){
-      editor.value = s.code;
-      state.diagramType = s.cat;
-      $('diagramType').value = s.cat;
-      refreshEditor();
-      buildPalette();
-      render(true);
-      $('snippets').classList.remove('show');
-      toast('snippet inserted');
-    };
+    var el=document.createElement('button');
+    el.className='snip'; 
+    el.innerHTML='<div class="font-semibold text-acc-cyan">'+s.t+'</div><span class="text-faint">'+s.cat+'</span>';
+    el.onclick=function(){ editor.value=s.code; state.diagramType=s.cat; $('diagramType').value=s.cat; refreshEditor(); buildPalette(); render(true); $('snippets').classList.add('hidden'); toast('snippet inserted'); };
     body.appendChild(el);
   });
 }
 
 /* ================= Help ================= */
 function buildHelp(){
-  var body = $('modalBody');
-  body.innerHTML =
-    '<h3>Keyboard shortcuts</h3>' +
-    '<table><tr><th>Key</th><th>Action</th></tr>' +
-    '<tr><td><span class="kbd">Ctrl</span>+<span class="kbd">Enter</span></td><td>Render now</td></tr>' +
-    '<tr><td><span class="kbd">Ctrl</span>+<span class="kbd">S</span></td><td>Download .mmd</td></tr>' +
-    '<tr><td><span class="kbd">Ctrl</span>+<span class="kbd">O</span></td><td>Open .mmd file</td></tr>' +
-    '<tr><td><span class="kbd">Ctrl</span>+<span class="kbd">/</span></td><td>Toggle snippets</td></tr>' +
-    '<tr><td><span class="kbd">Ctrl</span>+<span class="kbd">Z</span></td><td>Undo (native)</td></tr>' +
-    '</table>' +
-    '<h3>Diagram types</h3>' +
-    '<p>Mermaid Canvas supports <b>18 diagram types</b>: flowchart, sequence, class, state, ER, gantt, pie, journey, git, C4, mindmap, timeline, quadrant, sankey, xychart, block, packet, and architecture. Pick one from the <b>diagram</b> dropdown or insert a snippet.</p>' +
-    '<h3>Theming</h3>' +
-    '<p>Choose a built-in theme (<b>default, dark, forest, neutral</b>) or <b>base</b> for full custom control — set your own accent and background colors. You can also override any Mermaid theme variable by adding a <code>%%{init: {...}}%%</code> block at the top of your code.</p>' +
-    '<h3>Export</h3>' +
-    '<p>Export the rendered graph as <b>SVG</b> or <b>PNG</b>, copy the source as a <b>Markdown</b> code block, or save/load raw <b>.mmd</b> files. Everything runs 100% in your browser — nothing is uploaded.</p>' +
-    '<h3>Self-host</h3>' +
-    '<p>This tool ships as a Docker image. Run it on your own server:</p>' +
-    '<pre>docker run -d -p 8080:80 mokmail/mermaid-canvas</pre>' +
-    '<p>Then open <code>http://localhost:8080</code>. The image bundles Mermaid locally — no CDN, works fully offline.</p>';
+  $('modalBody').innerHTML =
+    '<h3 class="mb-1 mt-4 text-[11px] font-bold uppercase tracking-widest text-acc-cyan">Keyboard shortcuts</h3>'+
+    '<table class="mb-4 w-full border-collapse text-[11px]"><tr><td class="border border-line p-1.5"><kbd class="rounded border border-linehi px-1.5">Ctrl</kbd>+<kbd class="rounded border border-linehi px-1.5">Enter</kbd></td><td class="border border-line p-1.5 text-mist">Render now</td></tr>'+
+    '<tr><td class="border border-line p-1.5"><kbd class="rounded border border-linehi px-1.5">Ctrl</kbd>+<kbd class="rounded border border-linehi px-1.5">S</kbd></td><td class="border border-line p-1.5 text-mist">Download .mmd</td></tr>'+
+    '<tr><td class="border border-line p-1.5"><kbd class="rounded border border-linehi px-1.5">Ctrl</kbd>+<kbd class="rounded border border-linehi px-1.5">O</kbd></td><td class="border border-line p-1.5 text-mist">Open .mmd</td></tr>'+
+    '<tr><td class="border border-line p-1.5"><kbd class="rounded border border-linehi px-1.5">Ctrl</kbd>+<kbd class="rounded border border-linehi px-1.5">/</kbd></td><td class="border border-line p-1.5 text-mist">Toggle snippets</td></tr></table>'+
+    '<h3 class="mb-1 mt-4 text-[11px] font-bold uppercase tracking-widest text-acc-cyan">Diagram types</h3>'+
+    '<p>Supports <b>18 diagram types</b>: flowchart, sequence, class, state, ER, gantt, pie, journey, git, C4, mindmap, timeline, quadrant, sankey, xychart, block, packet, architecture.</p>'+
+    '<h3 class="mb-1 mt-4 text-[11px] font-bold uppercase tracking-widest text-acc-cyan">Theming</h3>'+
+    '<p>Pick a theme in the viewer toolbar, or use <b>base</b> for custom accent and background colors. Override any Mermaid variable with a <code class="rounded bg-white/[0.05] px-1 text-acc-lime">%%{init: {...}}%%</code> block.</p>'+
+    '<h3 class="mb-1 mt-4 text-[11px] font-bold uppercase tracking-widest text-acc-cyan">Export</h3>'+
+    '<p>Download SVG or PNG, copy the source as Markdown, or save/load .mmd files. Fully client-side.</p>'+
+    '<h3 class="mb-1 mt-4 text-[11px] font-bold uppercase tracking-widest text-acc-cyan">Self-host</h3>'+
+    '<pre class="my-2 overflow-auto rounded-lg border border-line bg-black/30 p-3 text-[11px] text-acc-green">docker run -d -p 8080:80 mokmail/mermaid-canvas</pre>'+
+    '<p>Mermaid is bundled locally — no CDN, fully offline.</p>';
 }
 
 /* ================= File I/O ================= */
-function saveFile(){
-  var code = editor.value;
-  if (!code.trim()){ toast('nothing to save', true); return; }
-  download('diagram.mmd', code, 'text/plain');
-  toast('saved diagram.mmd');
-}
+function saveFile(){ var code=editor.value; if(!code.trim()){ toast('nothing to save',true); return; } download('diagram.mmd',code,'text/plain'); toast('saved diagram.mmd'); }
 
 /* ================= Events ================= */
-editor.addEventListener('input', function(){
-  scheduleRender();
-  state.dirty = true;
-  refreshEditor();
-});
-editor.addEventListener('keydown', function(e){
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter'){ e.preventDefault(); render(true); }
-  if ((e.ctrlKey || e.metaKey) && e.key === 's'){ e.preventDefault(); saveFile(); }
-  if ((e.ctrlKey || e.metaKey) && e.key === 'o'){ e.preventDefault(); $('fileInput').click(); }
-  if ((e.ctrlKey || e.metaKey) && e.key === '/'){ e.preventDefault(); toggleSnippets(); }
-  // Ctrl/Cmd+Z / Shift+Z undo-redo are native; keep default. Tab indents.
-  if (e.key === 'Tab'){
-    e.preventDefault();
-    var s = editor.selectionStart, en = editor.selectionEnd;
-    editor.value = editor.value.substring(0,s) + '    ' + editor.value.substring(en);
-    editor.selectionStart = editor.selectionEnd = s + 4;
-    refreshEditor();
-    scheduleRender();
+editor.addEventListener('input',function(){ scheduleRender(); state.dirty=true; refreshEditor(); });
+editor.addEventListener('keydown',function(e){
+  if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){ e.preventDefault(); render(true); }
+  if((e.ctrlKey||e.metaKey)&&e.key==='s'){ e.preventDefault(); saveFile(); }
+  if((e.ctrlKey||e.metaKey)&&e.key==='o'){ e.preventDefault(); $('fileInput').click(); }
+  if((e.ctrlKey||e.metaKey)&&e.key==='/'){ e.preventDefault(); toggleSnippets(); }
+  if(e.key==='Tab'){
+    e.preventDefault(); var s=editor.selectionStart,en=editor.selectionEnd;
+    editor.value=editor.value.substring(0,s)+'    '+editor.value.substring(en);
+    editor.selectionStart=editor.selectionEnd=s+4; refreshEditor(); scheduleRender();
   }
 });
-editor.addEventListener('scroll', function(){ syncScroll(); updateLineCol(); });
-editor.addEventListener('click', updateLineCol);
-editor.addEventListener('keyup', function(){ updateLineCol(); syncScroll(); });
+editor.addEventListener('scroll',function(){ syncScroll(); updateLineCol(); });
+editor.addEventListener('click',updateLineCol);
+editor.addEventListener('keyup',function(){ updateLineCol(); syncScroll(); });
 
-function updateLineCol(){
-  var v = editor.value;
-  var pos = editor.selectionStart;
-  var before = v.substring(0, pos);
-  var line = (before.match(/\n/g) || []).length + 1;
-  var lastNl = before.lastIndexOf('\n');
-  var col = pos - lastNl;
-  $('lineCol').textContent = line + ':' + col;
-}
-
-$('diagramType').addEventListener('change', function(){
-  state.diagramType = this.value;
-  buildPalette();
-  render(true);
-});
-$('btnTemplate').addEventListener('click', loadTemplate);
-$('theme').addEventListener('change', function(){
-  state.theme = this.value;
-  render(true);
-});
-$('accentColor').addEventListener('input', function(){
-  state.accent = this.value;
-  if (state.theme === 'base') render(true);
-});
-$('bgColor').addEventListener('input', function(){
-  state.bg = this.value;
-  if (state.theme === 'base') render(true);
-});
-
-$('btnSplit').addEventListener('click', function(){
-  state.vertical = !state.vertical;
-  $('split').classList.toggle('vert', state.vertical);
-  this.classList.toggle('active', state.vertical);
-});
+$('diagramType').addEventListener('change',function(){ state.diagramType=this.value; buildPalette(); render(true); });
+$('btnTemplate').addEventListener('click',loadTemplate);
+$('theme').addEventListener('change',function(){ state.theme=this.value; render(true); });
+$('accentColor').addEventListener('input',function(){ state.accent=this.value; if(state.theme==='base') render(true); });
+$('bgColor').addEventListener('input',function(){ state.bg=this.value; if(state.theme==='base') render(true); });
+$('btnSplit').addEventListener('click',function(){ state.vertical=!state.vertical; $('split').classList.toggle('vert',state.vertical); this.classList.toggle('active',state.vertical); });
 
 /* Floating viewer tools */
-var GRIDS = [
-  { cls: 'svg-grid-none', label: 'none' },
-  { cls: 'svg-grid-dots', label: 'dots' },
-  { cls: 'svg-grid-lines', label: 'lines' },
-  { cls: 'svg-grid-major', label: 'major' },
-  { cls: 'svg-grid-isometric', label: 'isom' },
-  { cls: 'svg-grid-graph', label: 'graph' },
-  { cls: 'svg-grid-gridpaper', label: 'gridpaper' },
+var GRIDS=[
+  {cls:'svg-grid-none',label:'none'},{cls:'svg-grid-dots',label:'dots'},{cls:'svg-grid-lines',label:'lines'},
+  {cls:'svg-grid-major',label:'major'},{cls:'svg-grid-isometric',label:'isometric'},{cls:'svg-grid-graph',label:'graph'},
+  {cls:'svg-grid-gridpaper',label:'gridpaper'},
 ];
-var gridIdx = 0;
-function setGrid(i){
-  gridIdx = (i + GRIDS.length) % GRIDS.length;
-  viewer.className = GRIDS[gridIdx].cls;
-  var lbl = $('vtGridLabel');
-  lbl.textContent = GRIDS[gridIdx].label;
-  $('vtGrid').classList.toggle('active', gridIdx !== 0);
-}
-function centerView(){
-  var svg = viewer.querySelector('svg');
-  if (!svg) return;
-  var vw = viewer.clientWidth, vh = viewer.clientHeight;
-  var r = svg.getBoundingClientRect();
-  var sw = r.width / state.zoom, sh = r.height / state.zoom;
-  state.panX = (vw - sw) / 2;
-  state.panY = (vh - sh - 40) / 2;
-  state.zoom = 1;
-  state.fit = false;
-  $('vtFit').classList.remove('active');
-  applyZoom();
-}
-$('vtGrid').addEventListener('click', function(){ setGrid(gridIdx + 1); });
-$('vtZoomIn').addEventListener('click', function(){ state.zoom = Math.min(state.zoom * 1.25, 5); state.fit = false; $('vtFit').classList.remove('active'); applyZoom(); });
-$('vtZoomOut').addEventListener('click', function(){ state.zoom = Math.max(state.zoom / 1.25, 0.1); state.fit = false; $('vtFit').classList.remove('active'); applyZoom(); });
-$('vtCenter').addEventListener('click', centerView);
-$('vtReset').addEventListener('click', function(){ resetView(); setGrid(1); });
-$('vtFit').addEventListener('click', function(){ state.fit = !state.fit; this.classList.toggle('active', state.fit); applyZoom(); });
-$('vtPng').addEventListener('click', exportPng);
+var gridIdx=1;
+function setGrid(i){ gridIdx=(i+GRIDS.length)%GRIDS.length; viewer.className='relative flex min-h-0 flex-1 items-start justify-center overflow-auto bg-[rgba(4,8,16,.35)] p-5 '+GRIDS[gridIdx].cls; $('vtGridLabel').textContent=GRIDS[gridIdx].label; $('vtGrid').classList.toggle('active',gridIdx!==0); }
+function centerView(){ var svg=viewer.querySelector('svg'); if(!svg)return; var vw=viewer.clientWidth,vh=viewer.clientHeight; var r=svg.getBoundingClientRect(); var sw=r.width/state.zoom,sh=r.height/state.zoom; state.panX=(vw-sw)/2; state.panY=(vh-sh-40)/2; state.zoom=1; state.fit=false; $('vtFit').classList.remove('active'); applyZoom(); }
+$('vtGrid').addEventListener('click',function(){ setGrid(gridIdx+1); });
+$('vtZoomIn').addEventListener('click',function(){ state.zoom=Math.min(state.zoom*1.25,5); state.fit=false; $('vtFit').classList.remove('active'); applyZoom(); });
+$('vtZoomOut').addEventListener('click',function(){ state.zoom=Math.max(state.zoom/1.25,0.1); state.fit=false; $('vtFit').classList.remove('active'); applyZoom(); });
+$('vtCenter').addEventListener('click',centerView);
+$('vtReset').addEventListener('click',function(){ resetView(); setGrid(1); });
+$('vtFit').addEventListener('click',function(){ state.fit=!state.fit; this.classList.toggle('active',state.fit); applyZoom(); });
+$('vtPng').addEventListener('click',exportPng);
 
+$('btnSvg').addEventListener('click',exportSvg);
+$('btnPng').addEventListener('click',exportPng);
+$('btnMd').addEventListener('click',exportMd);
+$('btnCopy').addEventListener('click',function(){ if(!editor.value.trim()){ toast('nothing to copy',true); return; } copyText(editor.value); toast('source copied'); });
+$('btnNew').addEventListener('click',function(){ if(state.dirty&&!confirm('Discard the current diagram?'))return; editor.value=''; state.dirty=false; refreshEditor(); render(true); toast('new diagram'); });
+$('btnLoad').addEventListener('click',function(){ $('fileInput').click(); });
+$('btnSave').addEventListener('click',saveFile);
+$('fileInput').addEventListener('change',function(e){ var f=e.target.files[0]; if(!f)return; var r=new FileReader(); r.onload=function(){ editor.value=r.result; state.dirty=false; refreshEditor(); render(true); toast('loaded '+f.name); }; r.readAsText(f); this.value=''; });
 
-$('btnSvg').addEventListener('click', exportSvg);
-$('btnPng').addEventListener('click', exportPng);
-$('btnMd').addEventListener('click', exportMd);
-$('btnCopy').addEventListener('click', function(){
-  if (!editor.value.trim()){ toast('nothing to copy', true); return; }
-  copyText(editor.value);
-  toast('source copied');
-});
-$('btnNew').addEventListener('click', function(){
-  if (state.dirty && !confirm('Discard the current diagram?')) return;
-  editor.value = '';
-  state.dirty = false;
-  refreshEditor();
-  render(true);
-  toast('new diagram');
-});
-$('btnLoad').addEventListener('click', function(){ $('fileInput').click(); });
-$('btnSave').addEventListener('click', saveFile);
-$('fileInput').addEventListener('change', function(e){
-  var f = e.target.files[0];
-  if (!f) return;
-  var r = new FileReader();
-  r.onload = function(){
-    editor.value = r.result;
-    state.dirty = false;
-    refreshEditor();
-    render(true);
-    toast('loaded ' + f.name);
-  };
-  r.readAsText(f);
-  this.value = '';
-});
+function toggleSnippets(){ var el=$('snippets'); if(el.classList.contains('hidden')){ el.classList.remove('hidden'); el.classList.add('show'); } else { el.classList.add('hidden'); } }
+$('btnSnippets').addEventListener('click',toggleSnippets);
+$('btnSnippetsClose').addEventListener('click',function(){ $('snippets').classList.add('hidden'); });
 
-function toggleSnippets(){
-  $('snippets').classList.toggle('show');
-}
-$('btnSnippets').addEventListener('click', toggleSnippets);
-$('btnSnippetsClose').addEventListener('click', function(){ $('snippets').classList.remove('show'); });
-
-/* Palette drawer (mobile): toggle via button, close via backdrop or Escape */
+/* Palette drawer (mobile) */
 function isMobile(){ return window.matchMedia('(max-width:760px)').matches; }
-function openPalette(){
-  $('palettePane').classList.add('open');
-  $('paletteBackdrop').classList.add('show');
-}
-function closePalette(){
-  $('palettePane').classList.remove('open');
-  $('paletteBackdrop').classList.remove('show');
-}
-$('btnPalette').addEventListener('click', function(){
-  if (isMobile()){
-    if ($('palettePane').classList.contains('open')) closePalette();
-    else openPalette();
-  }
-});
-$('btnPaletteFab').addEventListener('click', function(){
-  if ($('palettePane').classList.contains('open')) closePalette();
-  else openPalette();
-});
-$('paletteBackdrop').addEventListener('click', closePalette);
-document.addEventListener('keydown', function(e){
-  if (e.key === 'Escape' && isMobile() && $('palettePane').classList.contains('open')) closePalette();
-});
-// On desktop the palette is always visible; on mobile it's a drawer.
-window.addEventListener('resize', function(){
-  if (!isMobile()) closePalette();
-});
+function openPalette(){ $('palettePane').classList.add('open'); $('paletteBackdrop').classList.add('show'); }
+function closePalette(){ $('palettePane').classList.remove('open'); $('paletteBackdrop').classList.remove('show'); }
+$('btnPalette').addEventListener('click',function(){ if(isMobile()){ if($('palettePane').classList.contains('open'))closePalette(); else openPalette(); } });
+$('btnPaletteFab').addEventListener('click',function(){ if($('palettePane').classList.contains('open'))closePalette(); else openPalette(); });
+$('paletteBackdrop').addEventListener('click',closePalette);
+document.addEventListener('keydown',function(e){ if(e.key==='Escape'&&isMobile()&&$('palettePane').classList.contains('open'))closePalette(); });
+window.addEventListener('resize',function(){ if(!isMobile())closePalette(); });
 
-$('btnHelp').addEventListener('click', function(){ $('modal').classList.add('show'); });
-$('btnHelpClose').addEventListener('click', function(){ $('modal').classList.remove('show'); });
-$('btnHelpOk').addEventListener('click', function(){ $('modal').classList.remove('show'); });
-$('modal').addEventListener('click', function(e){ if (e.target === this) this.classList.remove('show'); });
+$('btnHelp').addEventListener('click',function(){ $('modal').classList.remove('hidden'); $('modal').classList.add('flex'); });
+$('btnHelpClose').addEventListener('click',function(){ $('modal').classList.add('hidden'); $('modal').classList.remove('flex'); });
+$('btnHelpOk').addEventListener('click',function(){ $('modal').classList.add('hidden'); $('modal').classList.remove('flex'); });
+$('modal').addEventListener('click',function(e){ if(e.target===this){ this.classList.add('hidden'); this.classList.remove('flex'); } });
 
-window.addEventListener('resize', function(){ if (state.fit) applyZoom(); });
+window.addEventListener('resize',function(){ if(state.fit)applyZoom(); });
 
 /* ================= Init ================= */
 buildSnippets();
 buildHelp();
 buildPalette();
 editor.value = SNIPPETS[0].code;
-state.diagramType = 'flowchart';
-$('diagramType').value = 'flowchart';
+state.diagramType='flowchart';
+$('diagramType').value='flowchart';
 refreshEditor();
 render(true);
-// dots grid is the default background
 setGrid(1);
 
 })();
 </script>
+
+<style>
+.pal-cat{font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:#5f7a6a;margin:12px 0 5px;padding-left:2px}
+.pal-cat:first-child{margin-top:0}
+.pal-item{display:block;width:100%;text-align:left;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.09);border-radius:8px;padding:6px 9px;margin-bottom:5px;color:#e7f2ea;font-size:11px;transition:.12s;cursor:pointer}
+.pal-item:hover{border-color:#4ade80;background:rgba(74,222,128,.09);color:#4ade80;box-shadow:0 0 10px rgba(74,222,128,.12)}
+.snip{display:block;width:100%;text-align:left;border:1px solid rgba(255,255,255,.09);border-radius:8px;padding:9px 11px;margin-bottom:8px;cursor:pointer;transition:.12s;background:rgba(255,255,255,.02)}
+.snip:hover{border-color:#4ade80;background:rgba(74,222,128,.05);color:#4ade80}
+@media(max-width:760px){
+  #split{grid-template-columns:1fr!important;grid-template-rows:1fr 1fr!important}
+  #editorPane{border-right:none!important;border-bottom:1px solid rgba(255,255,255,.09)}
+  #palettePane{position:fixed;top:0;left:0;bottom:0;width:78vw;max-width:300px;z-index:55;transform:translateX(-105%);transition:transform .22s ease;border-right:1px solid rgba(255,255,255,.16);box-shadow:8px 0 30px rgba(0,0,0,.5)}
+  #palettePane.open{transform:translateX(0)}
+  #paletteBackdrop{display:block!important;opacity:0;transition:opacity .2s}
+  #paletteBackdrop.show{opacity:1;pointer-events:auto}
+  #btnPaletteFab{display:inline-flex}
+  #toolbar{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  #toolbar::-webkit-scrollbar{display:none}
+  #viewerTools{right:10px;bottom:10px}
+  .vt-label,#vtGridLabel{display:none}
+  header .badge{display:none}
+}
+@media(min-width:761px){#paletteBackdrop{display:none}}
+</style>
 </body>
 </html>
