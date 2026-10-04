@@ -1,0 +1,315 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   kmail.at theme layer for Mermaid Canvas
+   ════════════════════════════════════════════════════════════════════════════
+
+   Loaded AFTER `mermaid-canvas.css`, so same-specificity rules here win.
+
+   WHY A LAYER AND NOT AN HTML REWRITE
+   The app ships a compiled Tailwind bundle: ~200 utility class occurrences carry
+   hardcoded hues (green/cyan/lime gradients, glow shadows, translucent panels)
+   and rounded geometry. Rewriting every class in the markup would be a large,
+   fragile diff that also has to be re-applied to every other build of this tool.
+   Instead this file re-points the app's own token vocabulary at the kmail.at
+   design system, leaving the app's structure and behaviour untouched.
+
+   Overrides use attribute selectors (`[class~="text-mist"]`) rather than the
+   escaped Tailwind forms (`.text-mist`). `~=` is an exact literal word match, so
+   no escaping of `/`, `[`, `.` is needed, and it cannot accidentally match a
+   neighbour token.
+
+   THE DESIGN RULES BEING APPLIED (from kmail.at globals.css)
+   · True monochrome — no hue anywhere in the chrome. Every "accent" resolves to
+     the theme ink, exactly as the site does (`--acc-*` == ink there).
+   · Square geometry — the site's `.pane` and `.btn-*` are `border-radius: 0`.
+   · Flat surfaces — `.pane` is a hairline border on a solid panel, never a
+     translucent blurred pane.
+   · No glow. The site has no shadows; hierarchy is drawn with 1px rules.
+   · Light + dark, following the SAME `kmail-theme` localStorage key and the same
+     `html.dark` class the site's ThemeToggle uses.
+
+   LEFT UNTOUCHED ON PURPOSE
+   Diagram colour themes in the viewer. Those colourise the user's OUTPUT
+   (exported SVG/PNG), not the app chrome — the chrome around them is monochrome.
+   That is a deliberate decision, not an oversight.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── tokens: identical values to kmail.at's :root / html.dark ─────────────── */
+:root {
+  --k-void: 255 255 255;
+  --k-panel: 250 250 250;
+  --k-panel-hi: 243 243 244;
+  --k-ghost: 12 12 13;
+  --k-dim: 82 82 91;
+  --k-faint: 140 140 148;
+  --k-line-dim: 228 228 231;
+  --k-line-hi: 186 186 192;
+}
+
+html.dark {
+  --k-void: 10 10 10;
+  --k-panel: 17 17 17;
+  --k-panel-hi: 26 26 26;
+  --k-ghost: 245 245 245;
+  --k-dim: 168 168 173;
+  --k-faint: 116 116 122;
+  --k-line-dim: 36 36 38;
+  --k-line-hi: 74 74 78;
+}
+
+/* ── page ground: flat, no ambient colour ─────────────────────────────────
+   The app painted three coloured radial gradients plus a green glow. The site's
+   ground is a single flat colour. */
+body {
+  background: rgb(var(--k-void)) !important;
+  color: rgb(var(--k-dim));
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* ── text tokens ────────────────────────────────────────────────────────── */
+[class~="text-ink"]   { color: rgb(var(--k-ghost)) !important; }
+[class~="text-mist"]  { color: rgb(var(--k-dim)) !important; }
+[class~="text-faint"] { color: rgb(var(--k-faint)) !important; }
+
+/* every former accent resolves to ink — the site's monochrome rule */
+[class~="text-acc-green"],
+[class~="text-acc-cyan"],
+[class~="text-acc-lime"],
+[class~="text-acc-amber"] { color: rgb(var(--k-ghost)) !important; }
+/* errors keep a distinct treatment, but without hue: ink + weight */
+[class~="text-acc-red"] { color: rgb(var(--k-ghost)) !important; font-weight: 600; }
+
+/* the gradient wordmark: flatten it to the site's ink.
+   NOTE this must OUT-SPECIFY the accent-gradient button rule below, which also
+   matches the wordmark (its class list contains `from-acc-green`). Specificity is
+   raised with the `h1` element plus two class attributes. Setting `color` alone
+   would leave a background-coloured block behind the glyphs — measured as a solid
+   ink bar with invisible text. */
+h1[class~="bg-clip-text"][class~="text-transparent"] {
+  background-image: none !important;
+  background-color: transparent !important;
+  -webkit-background-clip: border-box !important;
+  background-clip: border-box !important;
+  -webkit-text-fill-color: rgb(var(--k-ghost)) !important;
+  color: rgb(var(--k-ghost)) !important;
+}
+
+/* ── surfaces ───────────────────────────────────────────────────────────── */
+[class~="border-line"]   { border-color: rgb(var(--k-line-dim)) !important; }
+[class~="border-linehi"] { border-color: rgb(var(--k-line-hi)) !important; }
+
+[class~="bg-faint"] { background-color: rgb(var(--k-faint)) !important; }
+[class~="bg-acc-green"],
+[class~="bg-acc-amber"] { background-color: rgb(var(--k-ghost)) !important; }
+[class~="bg-acc-red"]   { background-color: rgb(var(--k-ghost)) !important; }
+
+/* hairline dividers between panes (the app used a 40% white band) */
+[class~="bg-line/40"] { background-color: rgb(var(--k-line-dim)) !important; }
+
+/* translucent white panels → solid site panels */
+[class~="bg-white/[0.015]"],
+[class~="bg-white/[0.02]"],
+[class~="bg-white/[0.03]"],
+[class~="bg-white/[0.035]"],
+[class~="bg-white/[0.045]"],
+[class~="bg-white/[0.05]"] { background-color: rgb(var(--k-panel)) !important; }
+
+/* opaque dark panels (snippets drawer, help dialog, viewer tools) */
+[class~="bg-[#0d1117]"],
+[class~="bg-[rgba(10,14,20,.95)]"],
+[class~="bg-[rgba(12,18,14,.72)]"] { background-color: rgb(var(--k-panel)) !important; }
+/* translucent BLACK chrome (e.g. the help dialog's code block, `bg-black/30`).
+   Left alone these stay dark slabs in light mode — measured as a black box
+   behind the `docker run` line. Re-point them at the panel token instead. */
+[class~="bg-black/30"],
+[class~="bg-black/40"],
+[class~="bg-black/50"],
+[class~="bg-black/60"] { background-color: rgb(var(--k-panel-hi)) !important; }
+/* the viewer's recessed ground — one step down from the void */
+[class~="bg-[rgba(4,8,16,.35)]"] {
+  background-color: rgb(var(--k-void)) !important;
+  background-image: none !important;
+}
+
+/* the editor's green corner glow */
+[class*="bg-[radial-gradient"] { background-image: none !important; }
+
+/* ── gradients ───────────────────────────────────────────────────────────
+   Two different gradients live in this app and they must NOT be treated alike:
+     · accent-filled buttons (`from-acc-green to-acc-lime`)  → flat ink fill
+     · transparent chrome fades (`from-white/A to-white/B`)   → must become
+       transparent, never a filled bar
+   A blanket `[class*="bg-gradient-to"]` rule turned the toolbar into a solid ink
+   bar with unreadable labels. So the two are targeted separately: accent
+   gradients get the fill, and chrome gradients are neutralised afterwards. */
+[class*="from-acc"],
+[class*="to-acc"] {
+  background-image: none !important;
+  background-color: rgb(var(--k-ghost)) !important;
+  color: rgb(var(--k-void)) !important;
+}
+
+/* chrome fades: drop the gradient entirely, keep the surface translucent-free */
+[class~="bg-gradient-to-b"],
+[class~="bg-gradient-to-t"],
+[class~="bg-gradient-to-r"],
+[class~="bg-gradient-to-l"],
+[class~="bg-gradient-to-br"],
+[class~="bg-gradient-to-bl"],
+[class~="bg-gradient-to-tr"],
+[class~="bg-gradient-to-tl"] { background-image: none !important; }
+[class*="from-white/"],
+[class*="to-white/"] {
+  --tw-gradient-from: transparent !important;
+  --tw-gradient-to: transparent !important;
+}
+
+/* text colours on former accent buttons */
+[class~="text-[#06210f]"],
+[class~="text-[#1a0505]"] { color: rgb(var(--k-void)) !important; }
+
+/* ── no glow, no blur: the site draws hierarchy with hairlines ──────────── */
+[class*="shadow-"]      { box-shadow: none !important; }
+[class*="drop-shadow-"] { filter: none !important; }
+[class*="backdrop-blur"] { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+
+/* ── square geometry, matching .pane / .btn-* ───────────────────────────── */
+[class*="rounded"] { border-radius: 0 !important; }
+
+/* ── hover states: border/ink, never accent hue ─────────────────────────── */
+[class*="hover:border-acc"]:hover { border-color: rgb(var(--k-line-hi)) !important; }
+[class*="hover:text-acc"]:hover   { color: rgb(var(--k-ghost)) !important; }
+[class*="hover:from-acc"]:hover   { background-color: rgb(var(--k-ghost)) !important; }
+[class*="hover:to-acc"]:hover     { background-color: rgb(var(--k-ghost)) !important; }
+
+/* ── the site's type treatments ──────────────────────────────────────────
+   Labels are small, uppercase, very widely tracked, mono, faint — the site's
+   `.label-caps`. Applied to the app's chrome headers. */
+#toolbar span[class*="uppercase"],
+#palettePane > div:first-child,
+#editorPane > div:first-child,
+#viewerPane > div:first-child,
+#snippets > div:first-child {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.34em !important;
+  color: rgb(var(--k-faint)) !important;
+}
+
+/* the app name — site nav brand treatment */
+#appTitle {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace !important;
+  font-weight: 500 !important;
+  font-size: 11px !important;
+  letter-spacing: 0.28em !important;
+  text-transform: uppercase;
+  color: rgb(var(--k-ghost)) !important;
+}
+
+/* the brand lockup (logomark + wordmark) — mirrors the site header, which pairs
+   the mark with the mono wordmark and links home */
+header a[aria-label="kmail.at — home"] {
+  text-decoration: none;
+  gap: 10px;
+}
+header a[aria-label="kmail.at — home"]:hover #appTitle { opacity: 0.75; }
+header a[aria-label="kmail.at — home"] svg { flex-shrink: 0; }
+
+/* ── editor: monochrome syntax ───────────────────────────────────────────
+   The app's token colours were cyan/amber/green/blue. Monochrome keeps the
+   code readable through weight and tone instead of hue. */
+.tok-kw   { color: rgb(var(--k-ghost)) !important; font-weight: 600; }
+.tok-cmt  { color: rgb(var(--k-faint)) !important; font-style: italic; }
+.tok-str  { color: rgb(var(--k-dim)) !important; }
+.tok-edge { color: rgb(var(--k-ghost)) !important; }
+.tok-punc { color: rgb(var(--k-dim)) !important; }
+
+#gutterInner { color: rgb(var(--k-faint)) !important; }
+#editor {
+  color: transparent;
+  caret-color: rgb(var(--k-ghost)) !important;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+#hl { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+#editor::selection { background: rgb(var(--k-ghost) / 0.18) !important; }
+#editor::placeholder { color: rgb(var(--k-faint) / 0.5) !important; }
+
+.vt-select option { background: rgb(var(--k-panel)) !important; color: rgb(var(--k-ghost)) !important; }
+
+/* the toolbar buttons: site `.btn-line` proportions, hairline border */
+.tb-btn,
+.vtool {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  border: 1px solid rgb(var(--k-line-dim));
+  background: transparent;
+  color: rgb(var(--k-dim));
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition: color 160ms ease, border-color 160ms ease;
+}
+.tb-btn:hover,
+.vtool:hover {
+  color: rgb(var(--k-ghost));
+  border-color: rgb(var(--k-line-hi));
+}
+
+/* form controls inherit the flat treatment */
+select, input, textarea, button { font-family: inherit; }
+select { color: rgb(var(--k-dim)); }
+
+/* ── viewer grid backgrounds: monochrome, theme-aware ────────────────────
+   The app painted these with green/cyan. They are re-declared here using the
+   theme ink at varying alpha, so the same grid reads correctly on both the light
+   and dark ground — and the ink colour inverts with the theme for free. */
+.svg-grid-none { background-image: none !important; }
+
+.svg-grid-dots {
+  background-image: radial-gradient(rgb(var(--k-faint) / 0.45) 1px, transparent 1px) !important;
+  background-size: 22px 22px !important;
+}
+.svg-grid-lines {
+  background-image: linear-gradient(rgb(var(--k-faint) / 0.18) 1px, transparent 1px),
+                    linear-gradient(90deg, rgb(var(--k-faint) / 0.18) 1px, transparent 1px) !important;
+  background-size: 28px 28px !important;
+}
+.svg-grid-major {
+  background-image: linear-gradient(rgb(var(--k-faint) / 0.12) 1px, transparent 1px),
+                    linear-gradient(90deg, rgb(var(--k-faint) / 0.12) 1px, transparent 1px),
+                    linear-gradient(rgb(var(--k-faint) / 0.28) 1.5px, transparent 1.5px),
+                    linear-gradient(90deg, rgb(var(--k-faint) / 0.28) 1.5px, transparent 1.5px) !important;
+  background-size: 28px 28px, 28px 28px, 140px 140px, 140px 140px !important;
+}
+.svg-grid-isometric {
+  background-image: linear-gradient(30deg, rgb(var(--k-faint) / 0.18) 1px, transparent 1px),
+                    linear-gradient(150deg, rgb(var(--k-faint) / 0.18) 1px, transparent 1px) !important;
+  background-size: 38px 66px !important;
+  background-position: center !important;
+}
+.svg-grid-graph {
+  background-image: radial-gradient(rgb(var(--k-faint) / 0.35) 1.2px, transparent 1.2px),
+                    radial-gradient(rgb(var(--k-faint) / 0.15) 1.2px, transparent 1.2px) !important;
+  background-size: 22px 22px, 46px 46px !important;
+  background-position: 0 0, 11px 11px !important;
+}
+.svg-grid-gridpaper {
+  background-image: linear-gradient(rgb(var(--k-faint) / 0.10) 1px, transparent 1px),
+                    linear-gradient(90deg, rgb(var(--k-faint) / 0.10) 1px, transparent 1px),
+                    linear-gradient(rgb(var(--k-faint) / 0.28) 1px, transparent 1px),
+                    linear-gradient(90deg, rgb(var(--k-faint) / 0.28) 1px, transparent 1px) !important;
+  background-size: 120px 120px, 120px 120px, 480px 480px, 480px 480px !important;
+}
+
+/* ── theme toggle (mirrors the site's ThemeToggle) ──────────────────────── */
+#themeToggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgb(var(--k-line-dim));
+  color: rgb(var(--k-dim));
+  background: transparent;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease;
+}
+#themeToggle:hover { color: rgb(var(--k-ghost)); border-color: rgb(var(--k-line-hi)); }
+html:not(.dark) #themeToggle .icon-moon { display: none; }
+html.dark #themeToggle .icon-sun { display: none; }

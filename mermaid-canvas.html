@@ -10,25 +10,49 @@
 <meta property="og:type" content="website">
 <link rel="icon" type="image/svg+xml" href="/logo-mark.svg">
 <link rel="stylesheet" href="mermaid-canvas.css">
+<link rel="stylesheet" href="kmail-theme.css">
+<script>
+  /* No-flash theme, identical mechanism to kmail.at: same `kmail-theme` key,
+     same `dark` class on <html>. Runs before first paint so there is no flash
+     of the wrong ground colour when arriving from the site. */
+  (function () {
+    try {
+      var t = localStorage.getItem('kmail-theme');
+      /* Must ADD and REMOVE, not just add: a visitor who chose light on the site
+         arrives with `kmail-theme=light`, and an add-only script would leave the
+         stale `dark` class in place — which is why light reverted to dark on
+         reload. Mirror the site's own logic (default = light). */
+      if (t === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else if (t === 'light') {
+        document.documentElement.classList.remove('dark');
+      } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    } catch (e) {}
+  })();
+</script>
 <style>
   /* minimal structural CSS the Tailwind build won't cover */
-  #gutterInner{position:absolute;left:0;right:0;top:0;text-align:right;padding-right:8px;color:var(--c-faint,#5f7a6a);white-space:pre}
-  #editor{color:transparent;-webkit-text-fill-color:transparent;caret-color:#e7f2ea}
-  #editor::selection{background:rgba(74,222,128,.28);-webkit-text-fill-color:transparent}
-  #editor::placeholder{color:rgba(95,122,106,.4)}
+  #gutterInner{position:absolute;left:0;right:0;top:0;text-align:right;padding-right:8px;color:rgb(var(--k-faint));white-space:pre}
+  #editor{color:transparent;-webkit-text-fill-color:transparent;caret-color:rgb(var(--k-ghost))}
+  #editor::selection{background:rgb(var(--k-ghost) / .18);-webkit-text-fill-color:transparent}
+  #editor::placeholder{color:rgb(var(--k-faint) / .5)}
   #hl{position:absolute;inset:0;pointer-events:none;white-space:pre;overflow:hidden}
   #viewer svg{max-width:100%;height:auto;transition:transform .18s ease}
-  .tok-kw{color:#22d3ee;font-weight:600}
-  .tok-cmt{color:#5f7a6a;font-style:italic}
-  .tok-str{color:#fbbf24}
-  .tok-edge{color:#4ade80}
-  .tok-punc{color:#60a5fa}
+  .tok-kw{color:rgb(var(--k-ghost));font-weight:600}
+  .tok-cmt{color:rgb(var(--k-faint));font-style:italic}
+  .tok-str{color:rgb(var(--k-dim))}
+  .tok-edge{color:rgb(var(--k-ghost))}
+  .tok-punc{color:rgb(var(--k-dim))}
   .vt-select{background:transparent;border:none;color:inherit;font-family:inherit;font-size:11px;cursor:pointer;outline:none;max-width:88px;-webkit-appearance:none;appearance:none}
-  .vt-select option{background:#0a0e14;color:#e7f2ea}
+  .vt-select option{background:rgb(var(--k-panel));color:rgb(var(--k-ghost))}
   /* vertical split: palette on its own row, editor + viewer stacked below */
   #split.vert{grid-template-columns:1fr!important;grid-template-rows:auto 1fr 1fr!important}
-  #split.vert #palettePane{width:auto!important;border-right:none!important;border-bottom:1px solid rgba(255,255,255,.09);border-radius:10px;display:flex;max-height:180px;margin-bottom:2px}
-  #split.vert #editorPane{border-right:none!important;border-bottom:1px solid rgba(255,255,255,.09)}
+  #split.vert #palettePane{width:auto!important;border-right:none!important;border-bottom:1px solid rgb(var(--k-line-dim));border-radius:10px;display:flex;max-height:180px;margin-bottom:2px}
+  #split.vert #editorPane{border-right:none!important;border-bottom:1px solid rgb(var(--k-line-dim))}
 
 </style>
 </head>
@@ -37,15 +61,31 @@
 <div class="flex h-screen flex-col">
   <!-- Header -->
   <header class="flex flex-wrap items-center gap-3 border-b border-line bg-white/[0.035] px-5 py-2.5 backdrop-blur-xl">
-    <h1 class="bg-gradient-to-r from-acc-green to-acc-cyan bg-clip-text text-[15px] font-bold tracking-[0.2em] text-transparent drop-shadow-[0_0_12px_rgba(74,222,128,.35)]">
-      MERMAID CANVAS
-    </h1>
+    <a class="flex items-center gap-2.5 no-underline" href="/" aria-label="kmail.at — home">
+      <!-- The kmail.at logomark, inlined so it inherits the theme ink
+           (an <img> cannot inherit `currentColor`, and the mark is a
+           currentColor SVG). -->
+      <svg viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="kmail.at logomark" style="width:22px;height:22px;display:block;color:rgb(var(--k-ghost))">
+        <rect x="1" y="1" width="6" height="6" rx="1"/>
+        <rect x="17" y="1" width="6" height="6" rx="1"/>
+        <rect x="1" y="9" width="6" height="6" rx="1"/>
+        <rect x="9" y="9" width="6" height="6" rx="1"/>
+        <rect x="1" y="17" width="6" height="6" rx="1"/>
+        <rect x="17" y="17" width="6" height="6" rx="1"/>
+      </svg>
+      <h1 id="appTitle" class="bg-gradient-to-r from-acc-green to-acc-cyan bg-clip-text text-[15px] font-bold tracking-[0.2em] text-transparent drop-shadow-[0_0_12px_rgba(74,222,128,.35)]">
+        MERMAID CANVAS
+      </h1>
+    </a>
     <span class="rounded-full border border-line px-2 py-0.5 text-[10px] tracking-wider text-mist">v1.0.0</span>
     <span class="rounded-full border border-line bg-white/[0.03] px-2 py-0.5 text-[10px] tracking-wider text-mist">mermaid 11.4.1</span>
     <span class="flex items-center gap-1.5 text-[11px] text-mist"><span id="statusDot" class="h-1.5 w-1.5 rounded-full bg-faint"></span><span id="statusText">ready</span></span>
-    <a href="/tools/mermaid-canvas" target="_blank" rel="noreferrer" class="ml-auto hidden items-center gap-1.5 rounded-full border border-line bg-white/[0.03] px-3 py-1.5 text-[11px] text-mist transition-colors hover:border-acc-green hover:text-acc-green md:inline-flex">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M9 7h8v8"/></svg>
-      open standalone
+    <button id="themeToggle" class="ml-auto" type="button" aria-label="Switch theme" title="light / dark">
+      <svg class="icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      <svg class="icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+    <a href="/tools/mermaid-canvas" class="hidden items-center gap-1.5 rounded-full border border-line bg-white/[0.03] px-3 py-1.5 text-[11px] text-mist transition-colors hover:border-acc-green hover:text-acc-green md:inline-flex">
+      about this tool
     </a>
   </header>
 
@@ -190,7 +230,7 @@
 <div id="toast" class="pointer-events-none fixed bottom-6 left-1/2 z-[99] -translate-x-1/2 translate-y-20 rounded-lg bg-acc-green px-6 py-2.5 text-xs font-bold text-[#06210f] shadow-lg transition-transform duration-200"></div>
 
 <!-- shared toolbar button style -->
-<style>.tb-btn{display:inline-flex;align-items:center;gap:.25rem;border-radius:.5rem;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.045);color:#8fb0a0;padding:.25rem .625rem;font-size:11px;white-space:nowrap;transition:all .12s}.tb-btn:hover:not(:disabled){border-color:#4ade80;color:#4ade80;box-shadow:0 0 12px rgba(74,222,128,.18)}.vtool{display:flex;align-items:center;justify-content:center;gap:4px;min-width:30px;height:30px;padding:0 6px;border-radius:8px;background:transparent;border:1px solid transparent;color:#8fb0a0;font-size:15px;cursor:pointer;transition:.12s}.vtool:hover{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.16);color:#4ade80}.vtool.active{color:#4ade80;box-shadow:inset 0 0 0 1px #4ade80}.vt-label{font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:#5f7a6a}.vtool.active .vt-label{color:#4ade80}</style>
+<style>.tb-btn{display:inline-flex;align-items:center;gap:.25rem;border-radius:0;border:1px solid rgb(var(--k-line-dim));background:transparent;color:rgb(var(--k-dim));padding:.25rem .625rem;font-size:11px;white-space:nowrap;transition:all .12s}.tb-btn:hover:not(:disabled){border-color:rgb(var(--k-line-hi));color:rgb(var(--k-ghost));box-shadow:none}.vtool{display:flex;align-items:center;justify-content:center;gap:4px;min-width:30px;height:30px;padding:0 6px;border-radius:0;background:transparent;border:1px solid transparent;color:rgb(var(--k-dim));font-size:15px;cursor:pointer;transition:.12s}.vtool:hover{background:transparent;border-color:rgb(var(--k-line-hi));color:rgb(var(--k-ghost))}.vtool.active{color:rgb(var(--k-ghost));box-shadow:inset 0 0 0 1px rgb(var(--k-line-hi))}.vt-label{font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:#5f7a6a}.vtool.active .vt-label{color:rgb(var(--k-ghost))}</style>
 
 <script src="mermaid.min.js"></script>
 <script>
@@ -267,7 +307,7 @@ mermaid.initialize({
 
 /* ================= Rendering ================= */
 function setStatus(cls, text){
-  statusDot.className = 'h-1.5 w-1.5 rounded-full ' + (cls==='ok'?'bg-acc-green shadow-[0_0_8px_#4ade80]':cls==='err'?'bg-acc-red shadow-[0_0_8px_#f87171]':'bg-acc-amber animate-pulse');
+  statusDot.className = 'h-1.5 w-1.5 rounded-full ' + (cls==='ok'?'bg-acc-green':cls==='err'?'bg-acc-red':'bg-acc-amber animate-pulse');
   statusText.textContent = text;
 }
 
@@ -626,20 +666,38 @@ refreshEditor();
 render(true);
 setGrid(1);
 
+/* ================= Theme: mirrors kmail.at exactly =================
+   Same `kmail-theme` localStorage key and same `dark` class on <html> as the
+   site's ThemeToggle, so a visitor's choice carries between the site and the
+   tool. The initial class is applied by the no-flash script in <head>. */
+(function initTheme(){
+  var btn = $('themeToggle');
+  if (!btn) return;
+  btn.addEventListener('click', function(){
+    var next = !document.documentElement.classList.contains('dark');
+    document.documentElement.classList.toggle('dark', next);
+    try { localStorage.setItem('kmail-theme', next ? 'dark' : 'light'); } catch(e){}
+    // The grid and any monochrome diagram are painted from CSS-var colours, so
+    // re-render so the canvas matches the new ground immediately.
+    setGrid(gridIdx);
+    render(true);
+  });
+})();
+
 })();
 </script>
 
 <style>
-.pal-cat{font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:#5f7a6a;margin:12px 0 5px;padding-left:2px}
+.pal-cat{font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:rgb(var(--k-faint));margin:12px 0 5px;padding-left:2px}
 .pal-cat:first-child{margin-top:0}
-.pal-item{display:block;width:100%;text-align:left;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.09);border-radius:8px;padding:6px 9px;margin-bottom:5px;color:#e7f2ea;font-size:11px;transition:.12s;cursor:pointer}
-.pal-item:hover{border-color:#4ade80;background:rgba(74,222,128,.09);color:#4ade80;box-shadow:0 0 10px rgba(74,222,128,.12)}
-.snip{display:block;width:100%;text-align:left;border:1px solid rgba(255,255,255,.09);border-radius:8px;padding:9px 11px;margin-bottom:8px;cursor:pointer;transition:.12s;background:rgba(255,255,255,.02)}
-.snip:hover{border-color:#4ade80;background:rgba(74,222,128,.05);color:#4ade80}
+.pal-item{display:block;width:100%;text-align:left;background:transparent;border:1px solid rgb(var(--k-line-dim));border-radius:0;padding:6px 9px;margin-bottom:5px;color:rgb(var(--k-dim));font-size:11px;transition:.12s;cursor:pointer}
+.pal-item:hover{border-color:rgb(var(--k-line-hi));background:transparent;color:rgb(var(--k-ghost));box-shadow:none}
+.snip{display:block;width:100%;text-align:left;border:1px solid rgb(var(--k-line-dim));border-radius:0;padding:9px 11px;margin-bottom:8px;cursor:pointer;transition:.12s;background:transparent;color:rgb(var(--k-dim))}
+.snip:hover{border-color:rgb(var(--k-line-hi));background:transparent;color:rgb(var(--k-ghost))}
 @media(max-width:760px){
   #split{grid-template-columns:1fr!important;grid-template-rows:1fr 1fr!important}
-  #editorPane{border-right:none!important;border-bottom:1px solid rgba(255,255,255,.09)}
-  #palettePane{position:fixed;top:0;left:0;bottom:0;width:78vw;max-width:300px;z-index:55;transform:translateX(-105%);transition:transform .22s ease;border-right:1px solid rgba(255,255,255,.16);box-shadow:8px 0 30px rgba(0,0,0,.5)}
+  #editorPane{border-right:none!important;border-bottom:1px solid rgb(var(--k-line-dim))}
+  #palettePane{position:fixed;top:0;left:0;bottom:0;width:78vw;max-width:300px;z-index:55;transform:translateX(-105%);transition:transform .22s ease;border-right:1px solid rgb(var(--k-line-hi));box-shadow:none}
   #palettePane.open{transform:translateX(0)}
   #paletteBackdrop{display:block!important;opacity:0;transition:opacity .2s}
   #paletteBackdrop.show{opacity:1;pointer-events:auto}

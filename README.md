@@ -17,18 +17,17 @@ Runs 100% in the browser — Mermaid is bundled locally, nothing is uploaded, an
 
 ## Run with Docker
 
+Build and run from a clone (there is no prebuilt image on Docker Hub — the image
+name is just the local build tag):
+
 ```bash
-docker run -d -p 8080:80 mokmail/mermaid-canvas
+git clone https://github.com/mokmail/mermaid-canvas
+cd mermaid-canvas
+docker compose up -d --build
 # open http://localhost:8080
 ```
 
-Or with Docker Compose:
-
-```bash
-docker compose up -d --build
-```
-
-## Build locally
+Or with plain Docker:
 
 ```bash
 docker build -t mermaid-canvas .
